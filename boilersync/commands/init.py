@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -10,7 +11,10 @@ from boilersync.template_processor import process_template_directory
 
 
 def init(
-    template_name: str, project_name: str | None = None, pretty_name: str | None = None
+    template_name: str,
+    project_name: str | None = None,
+    pretty_name: str | None = None,
+    collected_variables: dict[str, Any] | None = None,
 ) -> None:
     """Initialize a new project from a template.
 
@@ -18,6 +22,7 @@ def init(
         template_name: Name of the template to use from the boilerplate directory
         project_name: Optional predefined project name (snake_case)
         pretty_name: Optional predefined pretty name
+        collected_variables: Optional pre-collected variables to restore
 
     Raises:
         FileNotFoundError: If the template directory doesn't exist
@@ -65,8 +70,15 @@ def init(
     # Set up interpolation context with project names
     interpolation_context.set_project_names(snake_name, final_pretty_name)
 
+    # Restore any pre-collected variables
+    if collected_variables:
+        interpolation_context.set_collected_variables(collected_variables)
+
     # Process the template directory with interpolation
     process_template_directory(template_dir, target_dir)
+
+    # Get all collected variables to save them
+    collected_variables = interpolation_context.get_collected_variables()
 
     # Create .boilersync file to track the template
     boilersync_file = target_dir / ".boilersync"
@@ -74,6 +86,7 @@ def init(
         "template": template_name,
         "name_snake": snake_name,
         "name_pretty": final_pretty_name,
+        "variables": collected_variables,
     }
 
     with open(boilersync_file, "w", encoding="utf-8") as f:

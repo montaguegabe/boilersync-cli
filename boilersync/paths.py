@@ -21,6 +21,11 @@ class Paths:
             "/Users/gabemontague/Dropbox/Mac/Documents/Documents/Developer/code/boilerplate/"
         )
 
+    @cached_property
+    def user_config_path(self) -> Path:
+        """Path to the user's global boilersync configuration file."""
+        return Path.home() / ".boilersync_config"
+
     def _get_root(self) -> Path:
         """Get the root directory by finding the first parent directory containing .boilersync.
 

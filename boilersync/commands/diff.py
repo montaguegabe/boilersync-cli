@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 import subprocess
@@ -31,6 +32,7 @@ def diff() -> None:
         template_name = boilersync_data["template"]
         project_name = boilersync_data.get("name_snake")
         pretty_name = boilersync_data.get("name_pretty")
+        collected_variables = boilersync_data.get("variables", {})
     except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
         raise FileNotFoundError(
             f"Could not read template name from {boilersync_file}: {e}"
@@ -38,24 +40,34 @@ def diff() -> None:
 
     click.echo(f"🔍 Creating diff for template '{template_name}'...")
 
-    # Create temporary directory
-    with tempfile.TemporaryDirectory() as temp_dir_str:
-        temp_dir = Path(temp_dir_str)
-        project_temp_dir = temp_dir / "project"
-        project_temp_dir.mkdir()
+    # Create a hash-based temporary directory name
+    root_path_str = str(root_dir.resolve())
+    path_hash = hashlib.md5(root_path_str.encode()).hexdigest()[:8]
+    temp_base_dir = Path(tempfile.gettempdir()) / f"boilersync-diff-{path_hash}"
+    project_temp_dir = temp_base_dir / "project"
 
-        # Change to temp directory and run init
-        original_cwd = Path.cwd()
-        try:
-            import os
+    # Create the directory if it doesn't exist
+    project_temp_dir.mkdir(parents=True, exist_ok=True)
 
-            os.chdir(project_temp_dir)
+    # Change to temp directory and run init
+    original_cwd = Path.cwd()
+    try:
+        import os
 
-            # Run init command in temp directory with saved project names
-            click.echo("📦 Initializing fresh template in temporary directory...")
-            init(template_name, project_name, pretty_name)
+        # Clear temp directory before initializing
+        shutil.rmtree(project_temp_dir, ignore_errors=True)
+        project_temp_dir.mkdir(parents=True, exist_ok=True)
 
-            # Initialize git repo
+        os.chdir(project_temp_dir)
+
+        # Run init command in temp directory with saved project names
+        click.echo("📦 Initializing fresh template in temporary directory...")
+
+        init(template_name, project_name, pretty_name, collected_variables)
+
+        # Initialize git repo if it doesn't exist
+        git_dir = project_temp_dir / ".git"
+        if not git_dir.exists():
             click.echo("🔧 Setting up git repository...")
             subprocess.run(
                 ["git", "init"], cwd=project_temp_dir, check=True, capture_output=True
@@ -72,22 +84,50 @@ def diff() -> None:
                 check=True,
                 capture_output=True,
             )
+        else:
+            # If git repo exists, reset to clean state and update with fresh template
+            click.echo("🔄 Updating existing git repository with fresh template...")
+            subprocess.run(
+                ["git", "reset", "--hard", "HEAD"],
+                cwd=project_temp_dir,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "clean", "-fd"],
+                cwd=project_temp_dir,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=project_temp_dir,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", f"Updated template: {template_name}"],
+                cwd=project_temp_dir,
+                check=True,
+                capture_output=True,
+            )
 
-            # Copy files from root directory to temp directory, overwriting
-            click.echo("📋 Copying current project files...")
-            copy_project_files(root_dir, project_temp_dir)
+        # Copy files from root directory to temp directory, overwriting
+        click.echo("📋 Copying current project files...")
+        copy_project_files(root_dir, project_temp_dir)
 
-            # Open in GitHub Desktop
-            click.echo("🚀 Opening in GitHub Desktop...")
-            subprocess.run(["github", str(project_temp_dir)], check=True)
+        # Open in GitHub Desktop
+        click.echo("🚀 Opening in GitHub Desktop...")
+        subprocess.run(["github", str(project_temp_dir)], check=True)
 
-            # Keep the process alive so the temp directory doesn't get cleaned up immediately
-            click.echo("📂 Temporary directory created and opened in GitHub Desktop.")
-            click.echo("⏳ Press Enter when you're done reviewing the diff...")
-            input()
+        # Show the persistent directory path
+        click.echo(f"📂 Persistent comparison directory: {project_temp_dir}")
+        click.echo("💡 This directory will be reused for future diffs of this project.")
+        click.echo("⏳ Press Enter when you're done reviewing the diff...")
+        input()
 
-        finally:
-            os.chdir(original_cwd)
+    finally:
+        os.chdir(original_cwd)
 
 
 def copy_project_files(source_dir: Path, target_dir: Path) -> None:

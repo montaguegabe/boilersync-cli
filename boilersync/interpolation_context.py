@@ -10,7 +10,7 @@ class InterpolationContext:
     def __init__(self):
         self._names: ProjectNames | None = None
         self._custom_vars: Dict[str, Any] = {}
-        self._collected_vars: Dict[str, str] = {}  # Variables collected from user input
+        self._collected_vars: Dict[str, Any] = {}  # Variables collected from user input
 
     def set_project_name_from_directory(self, directory: Path) -> None:
         """Set project names based on a directory name.
@@ -40,12 +40,12 @@ class InterpolationContext:
         """
         self._custom_vars[key] = value
 
-    def set_collected_variable(self, key: str, value: str) -> None:
+    def set_collected_variable(self, key: str, value: Any) -> None:
         """Set a variable that was collected from user input.
 
         Args:
             key: Variable name
-            value: Variable value from user input
+            value: Variable value from user input (can be string, bool, int, float, etc.)
         """
         self._collected_vars[key] = value
 
@@ -114,6 +114,22 @@ class InterpolationContext:
         self._names = None
         self._custom_vars.clear()
         self._collected_vars.clear()
+
+    def get_collected_variables(self) -> Dict[str, Any]:
+        """Get all variables that were collected from user input.
+
+        Returns:
+            Dictionary of collected variables
+        """
+        return self._collected_vars.copy()
+
+    def set_collected_variables(self, variables: Dict[str, Any]) -> None:
+        """Set multiple collected variables at once.
+
+        Args:
+            variables: Dictionary of variable names and values
+        """
+        self._collected_vars.update(variables)
 
 
 # Global instance for use throughout the application

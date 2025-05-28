@@ -2,11 +2,12 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, Set
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import FileSystemLoader
 
 from boilersync.interpolation_context import interpolation_context
 from boilersync.variable_collector import (
     collect_missing_variables,
+    create_jinja_environment,
     extract_variables_from_template_content,
 )
 
@@ -14,7 +15,7 @@ from boilersync.variable_collector import (
 def interpolate_path_name(path_name: str, context: Dict[str, Any]) -> str:
     """Interpolate variables in file or folder names.
 
-    This does simple string replacement for variables like NAME_SNAKE, NAME_PASCAL, etc.
+    This does simple string replacement for uppercase NAME_* variables only.
     No Jinja2 syntax is used here - just direct substitution.
 
     Args:
@@ -25,8 +26,10 @@ def interpolate_path_name(path_name: str, context: Dict[str, Any]) -> str:
         Path name with variables substituted
     """
     result = path_name
+    # Only interpolate uppercase NAME_* variables for filenames and folder names
     for key, value in context.items():
-        result = result.replace(key, str(value))
+        if key.startswith("NAME_") and key.isupper():
+            result = result.replace(key, str(value))
     return result
 
 
@@ -120,17 +123,8 @@ def process_template_file(file_path: Path, context: Dict[str, Any]) -> None:
         file_path: Path to the file to process
         context: Variables for template interpolation
     """
-    # Create Jinja2 environment with custom delimiters
-    env = Environment(
-        loader=FileSystemLoader(file_path.parent),
-        block_start_string="$${%",
-        block_end_string="%}",
-        variable_start_string="$${",
-        variable_end_string="}",
-        comment_start_string="$${#",
-        comment_end_string="#}",
-        autoescape=False,  # Don't escape content since we're not dealing with HTML
-    )
+    # Create Jinja2 environment with custom delimiters and file loader
+    env = create_jinja_environment(loader=FileSystemLoader(file_path.parent))
 
     try:
         # Load and render the template
