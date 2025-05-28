@@ -2,7 +2,8 @@ import click
 
 from boilersync._version import __version__
 from boilersync.cli_helpers import common_command_wrapper
-from boilersync.commands.pull import init_cmd
+from boilersync.commands.init import init_cmd
+from boilersync.commands.pull import pull_cmd
 from boilersync.commands.push import push_cmd
 
 
@@ -29,6 +30,7 @@ def main():
 
 # Register commands
 main.add_command(common_command_wrapper(init_cmd))
+main.add_command(common_command_wrapper(pull_cmd))
 main.add_command(common_command_wrapper(push_cmd))
 
 
