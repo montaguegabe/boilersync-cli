@@ -18,6 +18,18 @@
             "env": {
                 "PYTEST_ADDOPTS": "--no-cov"
             }
+        },
+        {
+            "name": "Boilersync (zebra-crossing)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "boilersync",
+            "args": [
+                "push"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}/playground/zebra-crossing"
         }
     ]
 }

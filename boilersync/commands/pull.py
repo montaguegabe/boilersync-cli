@@ -10,13 +10,13 @@ from boilersync.paths import paths
 from boilersync.template_processor import process_template_directory
 
 
-def init(
+def pull(
     template_name: str,
     project_name: str | None = None,
     pretty_name: str | None = None,
     collected_variables: dict[str, Any] | None = None,
 ) -> None:
-    """Initialize a new project from a template.
+    """Pull template/boilerplate changes to the current project.
 
     Args:
         template_name: Name of the template to use from the boilerplate directory
@@ -98,11 +98,11 @@ def init(
     click.echo("📁 Created .boilersync file to track template origin")
 
 
-@click.command(name="init")
+@click.command(name="pull")
 @click.argument("template_name")
-def init_cmd(template_name: str):
-    """Initialize a new project from a template.
+def pull_cmd(template_name: str):
+    """Pull template/boilerplate changes to the current project.
 
     TEMPLATE_NAME is the name of the template directory in the boilerplate directory.
     """
-    init(template_name)
+    pull(template_name)
