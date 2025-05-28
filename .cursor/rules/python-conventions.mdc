@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Only use `try` and `except` when you are truly implementing recovery-from-failure logic.
+Prefer `pathlib` over `os` operations for dealing with files/paths.
+Prefer `logger` calls over `print`.

@@ -1,0 +1,25 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Add commands to the `commands` dir. To define a command, name the python file after the command, e.g. `my_function.py`, and declare it with e.g.:
+
+```python
+def my_function(argument1: str) -> None:
+    ...logic here...
+
+
+@click.command(name="my-function")
+@click.argument("argument1")
+def my_function_cmd(argument1: str):
+    """Documentation goes here
+    """
+    my_function(argument1)
+```
+
+Then register it in `cli.py` with e.g.:
+
+```python
+main.add_command(common_command_wrapper(my_function_cmd))
+```

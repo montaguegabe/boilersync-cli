@@ -182,3 +182,5 @@ staticfiles
 
 .env
 _version.py
+
+playground/

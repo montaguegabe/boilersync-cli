@@ -13,16 +13,22 @@ class Paths:
 
     @cached_property
     def boilersync_json_path(self) -> Path:
-        return self.root_dir / "boilersync.json"
+        return self.root_dir / ".boilersync"
+
+    @cached_property
+    def boilerplate_dir(self) -> Path:
+        return Path(
+            "/Users/gabemontague/Dropbox/Mac/Documents/Documents/Developer/code/boilerplate/"
+        )
 
     def _get_root(self) -> Path:
-        """Get the root directory by finding the first parent directory containing boilersync.json.
+        """Get the root directory by finding the first parent directory containing .boilersync.
 
         Returns:
-            The absolute path to the root directory containing boilersync.json.
+            The absolute path to the root directory containing .boilersync.
 
         Raises:
-            FileNotFoundError: If no boilersync.json is found in any parent directory.
+            FileNotFoundError: If no .boilersync is found in any parent directory.
         """
         override_root_dir = os.getenv("BOILERSYNC_ROOT_DIR")
         if override_root_dir:
@@ -31,11 +37,11 @@ class Paths:
         current = Path.cwd()
 
         while True:
-            if (current / "boilersync.json").exists():
+            if (current / ".boilersync").exists():
                 return current
 
             if current.parent == current:  # Reached root directory
-                msg = "Could not find boilersync.json in any parent directory"
+                msg = "Could not find .boilersync in any parent directory"
                 logger.error(msg)
                 raise FileNotFoundError(msg)
 

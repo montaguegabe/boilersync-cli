@@ -5,8 +5,6 @@ import traceback
 
 import click
 
-from boilersync.errors import GitError
-from boilersync.git_helpers import check_all_on_same_branch
 from boilersync.logging import configure_logging
 
 
@@ -46,12 +44,6 @@ def common_command_wrapper(command_to_wrap: click.Command) -> click.Command:
                 click.secho("\nDebug traceback:", fg="yellow", err=True)
                 click.secho(traceback.format_exc(), fg="yellow", err=True)
             exit_code = 1
-
-        # After every command, check that all sub-repos are on the same branch as the root repo
-        try:
-            check_all_on_same_branch(raise_error=True)
-        except GitError as e:
-            click.secho(e.args[0], fg="red", err=True)
 
         if exit_code is not None:
             sys.exit(exit_code)
