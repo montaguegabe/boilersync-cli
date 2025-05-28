@@ -1,0 +1,3 @@
+# boilersync
+
+`boilersync` is a boilerplate CLI tool that can not only generate projects from boilerplate templates, but keep the boilerplate "alive" and updated as you continue to develop the derivative projects.

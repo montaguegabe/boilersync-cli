@@ -1,0 +1,46 @@
+import logging
+import os
+from functools import cached_property
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+class Paths:
+    @cached_property
+    def root_dir(self) -> Path:
+        return self._get_root()
+
+    @cached_property
+    def boilersync_json_path(self) -> Path:
+        return self.root_dir / "boilersync.json"
+
+    def _get_root(self) -> Path:
+        """Get the root directory by finding the first parent directory containing boilersync.json.
+
+        Returns:
+            The absolute path to the root directory containing boilersync.json.
+
+        Raises:
+            FileNotFoundError: If no boilersync.json is found in any parent directory.
+        """
+        override_root_dir = os.getenv("BOILERSYNC_ROOT_DIR")
+        if override_root_dir:
+            return Path(override_root_dir)
+
+        current = Path.cwd()
+
+        while True:
+            if (current / "boilersync.json").exists():
+                return current
+
+            if current.parent == current:  # Reached root directory
+                msg = "Could not find boilersync.json in any parent directory"
+                logger.error(msg)
+                raise FileNotFoundError(msg)
+
+            current = current.parent
+
+
+# Global instance that can be mocked in tests
+paths = Paths()

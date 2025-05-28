@@ -1,0 +1,17 @@
+{
+    "python.testing.pytestArgs": [
+        ".",
+        "--no-cov",
+        "-q",
+        "--tb=native",
+        "-s",
+        "-x"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.experiments.optInto": [
+        "pythonTestAdapter"
+    ],
+    "python.experiments.enabled": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python"
+}

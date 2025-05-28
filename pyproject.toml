@@ -1,0 +1,39 @@
+
+[project.scripts]
+boilersync = "boilersync.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.11.10",
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+    "pytest-mock>=3.14.0",
+    "pyinstaller>=6.9.0",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "boilersync/_version.py"
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+select = ["E", "F", "I", "B", "W", "C90"]
+ignore = ["C901", "E501", "F821"]
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+line-ending = "auto"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
