@@ -205,9 +205,9 @@ def reverse_interpolate_project_files(
             new_path = dir_path.parent / reverse_interpolated_name
             try:
                 dir_path.rename(new_path)
-            except (FileExistsError, OSError):
+            except (FileExistsError, OSError) as e:
                 # If target exists or other OS error, skip the rename to avoid conflicts
-                pass
+                raise e
 
 
 def copy_changed_files_to_template(

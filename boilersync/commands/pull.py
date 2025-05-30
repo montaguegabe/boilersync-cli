@@ -1,6 +1,7 @@
 import json
+import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Set
 
 import click
 from git import InvalidGitRepositoryError, Repo
@@ -8,7 +9,10 @@ from git import InvalidGitRepositoryError, Repo
 from boilersync.interpolation_context import interpolation_context
 from boilersync.names import normalize_to_snake, snake_to_pretty
 from boilersync.paths import paths
-from boilersync.template_processor import process_template_directory
+from boilersync.template_processor import (
+    process_template_directory,
+)
+from boilersync.variable_collector import collect_missing_variables
 
 
 def is_git_repo_clean(target_dir: Path) -> bool:
@@ -29,34 +33,242 @@ def is_git_repo_clean(target_dir: Path) -> bool:
         return True
 
 
+def is_starter_file(file_path: Path) -> bool:
+    """Check if a file is a starter file (has .starter extension).
+
+    Args:
+        file_path: Path to check
+
+    Returns:
+        True if the file has .starter as the first extension
+    """
+    # Split the filename into name and extensions
+    parts = file_path.name.split(".")
+    if len(parts) > 1:
+        # Check if the first extension part is 'starter'
+        return parts[1] == "starter"
+    return False
+
+
+def scan_template_for_variables_excluding_starter(source_dir: Path) -> Set[str]:
+    """Scan template directory for variables, excluding starter files.
+
+    Args:
+        source_dir: Source template directory to scan
+
+    Returns:
+        Set of template variables found in non-starter template files
+    """
+    from boilersync.variable_collector import extract_variables_from_template_content
+
+    template_variables = set()
+
+    def scan_item(path: Path) -> None:
+        """Recursively scan files for template variables, excluding starter files."""
+        if path.is_file():
+            # Skip starter files
+            if is_starter_file(path):
+                return
+
+            # Scan all other files for template variables
+            try:
+                content = path.read_text(encoding="utf-8")
+                content_vars = extract_variables_from_template_content(content)
+                template_variables.update(content_vars)
+            except Exception:
+                # If we can't read the file (e.g., binary file), skip it
+                pass
+        elif path.is_dir():
+            # Recursively scan directory contents
+            for item in path.iterdir():
+                scan_item(item)
+
+    # Scan all items in the source directory
+    for item in source_dir.iterdir():
+        scan_item(item)
+
+    return template_variables
+
+
+def copy_and_process_template_excluding_starter(
+    source_dir: Path, target_dir: Path, context: dict[str, Any]
+) -> None:
+    """Copy template directory and process files, excluding starter files.
+
+    Args:
+        source_dir: Source template directory
+        target_dir: Target directory to copy to
+        context: Variables for interpolation
+    """
+    import shutil
+
+    from boilersync.template_processor import (
+        interpolate_path_name,
+        process_file_extensions,
+        process_template_file,
+    )
+
+    def process_item(src_path: Path, dst_path: Path) -> None:
+        """Recursively process files and directories, excluding starter files."""
+        if src_path.is_file():
+            # Skip starter files
+            if is_starter_file(src_path):
+                return
+
+            # Interpolate the destination file name
+            interpolated_name = interpolate_path_name(dst_path.name, context)
+
+            # Remove .boilersync extension if present
+            final_name = process_file_extensions(interpolated_name)
+            final_dst_path = dst_path.parent / final_name
+
+            # Copy the file
+            shutil.copy2(src_path, final_dst_path)
+
+            # Process the file content with Jinja2
+            process_template_file(final_dst_path, context)
+
+        elif src_path.is_dir():
+            # Interpolate the destination directory name
+            interpolated_name = interpolate_path_name(dst_path.name, context)
+            final_dst_path = dst_path.parent / interpolated_name
+
+            # Create the directory
+            final_dst_path.mkdir(exist_ok=True)
+
+            # Recursively process contents
+            for item in src_path.iterdir():
+                item_dst = final_dst_path / item.name
+                process_item(item, item_dst)
+
+    # Process all items in the source directory
+    for item in source_dir.iterdir():
+        item_dst = target_dir / item.name
+        process_item(item, item_dst)
+
+
+def process_template_directory_excluding_starter(
+    template_dir: Path, target_dir: Path
+) -> None:
+    """Process a template directory excluding starter files.
+
+    Args:
+        template_dir: Source template directory
+        target_dir: Target directory to process into
+    """
+    # First, scan the template for all variables (excluding starter files)
+    template_variables = scan_template_for_variables_excluding_starter(template_dir)
+
+    # Collect any missing variables from the user
+    collect_missing_variables(template_variables)
+
+    # Now process the template with the complete context (excluding starter files)
+    context = interpolation_context.get_context()
+    copy_and_process_template_excluding_starter(template_dir, target_dir, context)
+
+
+def pull_children(boilersync_path: Path, include_starter: bool = False) -> None:
+    """Pull updates for all child projects listed in a .boilersync file.
+
+    Args:
+        boilersync_path: Path to the .boilersync file containing children
+        include_starter: Whether to include starter files when pulling child updates
+    """
+    child_paths = paths.get_children_from_boilersync(boilersync_path)
+
+    if not child_paths:
+        return
+
+    click.echo(f"\n🔄 Found {len(child_paths)} child project(s) to update:")
+
+    for child_path in child_paths:
+        click.echo(f"  📁 {child_path.relative_to(boilersync_path.parent)}")
+
+    # Save current directory
+    original_cwd = Path.cwd()
+
+    try:
+        for child_path in child_paths:
+            click.echo(f"\n🔄 Updating child project: {child_path.name}")
+
+            # Change to child directory
+            os.chdir(child_path)
+
+            try:
+                # Pull updates for the child project (without recursing to avoid infinite loops)
+                pull(
+                    allow_non_empty=True,
+                    include_starter=include_starter,
+                    _recursive=False,
+                )
+                click.echo(f"✅ Updated child project: {child_path.name}")
+            except Exception as e:
+                click.echo(f"❌ Failed to update child project {child_path.name}: {e}")
+
+    finally:
+        # Always restore original directory
+        os.chdir(original_cwd)
+
+
 def pull(
-    template_name: str,
+    template_name: str | None = None,
     project_name: str | None = None,
     pretty_name: str | None = None,
     collected_variables: dict[str, Any] | None = None,
     allow_non_empty: bool = False,
+    include_starter: bool = False,
+    _recursive: bool = True,
 ) -> None:
     """Pull template/boilerplate changes to the current project.
 
     Args:
-        template_name: Name of the template to use from the boilerplate directory
+        template_name: Name of the template to use from the boilerplate directory (auto-detected if None)
         project_name: Optional predefined project name (snake_case)
         pretty_name: Optional predefined pretty name
         collected_variables: Optional pre-collected variables to restore
         allow_non_empty: If True, allow pulling into non-empty directories (requires clean git repo)
+        include_starter: If True, include starter files when pulling template changes
+        _recursive: If True, also pull updates for child projects (internal parameter)
 
     Raises:
-        FileNotFoundError: If the template directory doesn't exist
+        FileNotFoundError: If the template directory doesn't exist or .boilersync file not found
         FileExistsError: If the target directory is not empty and allow_non_empty is False
         RuntimeError: If allow_non_empty is True but git repo has uncommitted changes
     """
+    target_dir = Path.cwd()
+
+    # Auto-detect template name from .boilersync file if not provided
+    if template_name is None:
+        try:
+            boilersync_file = paths.boilersync_json_path
+            with open(boilersync_file, "r", encoding="utf-8") as f:
+                boilersync_data = json.load(f)
+            template_name = boilersync_data["template"]
+            # Also get the saved project details
+            if project_name is None:
+                project_name = boilersync_data.get("name_snake")
+            if pretty_name is None:
+                pretty_name = boilersync_data.get("name_pretty")
+            if collected_variables is None:
+                collected_variables = boilersync_data.get("variables", {})
+            click.echo(
+                f"📋 Auto-detected template '{template_name}' from .boilersync file"
+            )
+        except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
+            raise FileNotFoundError(
+                f"Could not auto-detect template name from .boilersync file: {e}. "
+                f"Please specify template name explicitly or run from a directory with .boilersync file."
+            ) from e
+
+    # At this point template_name should not be None
+    assert template_name is not None, "Template name should be set by now"
+
     template_dir = paths.boilerplate_dir / template_name
     if not template_dir.exists():
         raise FileNotFoundError(
             f"Template '{template_name}' not found in {paths.boilerplate_dir}"
         )
 
-    target_dir = Path.cwd()
     # Check if directory has any files besides .DS_Store
     has_files = any(p for p in target_dir.iterdir() if p.name != ".DS_Store")
 
@@ -107,7 +319,12 @@ def pull(
         interpolation_context.set_collected_variables(collected_variables)
 
     # Process the template directory with interpolation
-    process_template_directory(template_dir, target_dir)
+    if include_starter:
+        # Include all files including starter files
+        process_template_directory(template_dir, target_dir)
+    else:
+        # Exclude starter files
+        process_template_directory_excluding_starter(template_dir, target_dir)
 
     # Get all collected variables to save them
     collected_variables = interpolation_context.get_collected_variables()
@@ -134,13 +351,35 @@ def pull(
         )
     click.echo("📁 Created .boilersync file to track template origin")
 
+    # Pull updates for child projects if recursive is enabled
+    if _recursive:
+        pull_children(boilersync_file, include_starter)
+
 
 @click.command(name="pull")
-@click.argument("template_name")
-def pull_cmd(template_name: str):
+@click.argument("template_name", required=False)
+@click.option(
+    "--include-starter",
+    is_flag=True,
+    help="Include starter files when pulling template changes",
+)
+@click.option("--no-children", is_flag=True, help="Skip updating child projects")
+def pull_cmd(template_name: str | None, include_starter: bool, no_children: bool):
     """Pull template/boilerplate changes to the current project.
 
     TEMPLATE_NAME is the name of the template directory in the boilerplate directory.
+    If not provided, will auto-detect from the nearest .boilersync file.
     Can be used in non-empty directories if the git repository is clean.
+
+    By default, starter files (files with .starter extension) are excluded.
+    Use --include-starter to include them.
+
+    This command will also automatically pull updates for any child projects
+    listed in the .boilersync file. Use --no-children to skip child updates.
     """
-    pull(template_name, allow_non_empty=True)
+    pull(
+        template_name,
+        allow_non_empty=True,
+        include_starter=include_starter,
+        _recursive=not no_children,
+    )

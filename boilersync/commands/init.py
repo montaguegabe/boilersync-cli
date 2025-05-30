@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import click
 
 from boilersync.commands.pull import pull
+from boilersync.paths import paths
 
 
 def init(template_name: str) -> None:
@@ -13,7 +16,19 @@ def init(template_name: str) -> None:
         FileNotFoundError: If the template directory doesn't exist
         FileExistsError: If the target directory is not empty
     """
-    pull(template_name, allow_non_empty=False)
+    current_dir = Path.cwd()
+
+    # Check for parent .boilersync files before initializing
+    parent_dir = paths.find_parent_boilersync(current_dir)
+
+    # Initialize the project
+    pull(template_name, allow_non_empty=False, include_starter=True, _recursive=False)
+
+    # If we found a parent .boilersync, register this project as a child
+    if parent_dir is not None:
+        parent_boilersync_path = parent_dir / ".boilersync"
+        paths.add_child_to_parent(current_dir, parent_boilersync_path)
+        click.echo(f"📎 Registered as child project in parent: {parent_dir}")
 
 
 @click.command(name="init")
