@@ -210,6 +210,69 @@ def pull_children(boilersync_path: Path, include_starter: bool = False) -> None:
         os.chdir(original_cwd)
 
 
+def get_parent_template(template_dir: Path) -> str | None:
+    """Get the parent template name from template.json if it exists.
+
+    Args:
+        template_dir: The template directory to check
+
+    Returns:
+        The parent template name if found, None otherwise
+    """
+    template_json_path = template_dir / "template.json"
+    if not template_json_path.exists():
+        return None
+
+    try:
+        with open(template_json_path, "r", encoding="utf-8") as f:
+            template_data = json.load(f)
+        return template_data.get("parent")
+    except (json.JSONDecodeError, KeyError):
+        return None
+
+
+def get_template_inheritance_chain(
+    template_name: str, visited: Set[str] | None = None
+) -> list[str]:
+    """Get the full inheritance chain for a template, from root parent to child.
+
+    Args:
+        template_name: The template to get the inheritance chain for
+        visited: Set of already visited templates to detect circular dependencies
+
+    Returns:
+        List of template names in order from root parent to the given template
+
+    Raises:
+        ValueError: If a circular dependency is detected
+        FileNotFoundError: If a template in the chain doesn't exist
+    """
+    if visited is None:
+        visited = set()
+
+    if template_name in visited:
+        raise ValueError(
+            f"Circular dependency detected in template inheritance: {template_name}"
+        )
+
+    visited.add(template_name)
+
+    template_dir = paths.boilerplate_dir / template_name
+    if not template_dir.exists():
+        raise FileNotFoundError(
+            f"Template '{template_name}' not found in {paths.boilerplate_dir}"
+        )
+
+    parent_name = get_parent_template(template_dir)
+    if parent_name is None:
+        # This is the root template
+        return [template_name]
+
+    # Recursively get parent chain and append this template
+    parent_chain = get_template_inheritance_chain(parent_name, visited.copy())
+    return parent_chain + [template_name]
+
+
 def pull(
     template_name: str | None = None,
     project_name: str | None = None,
@@ -234,6 +297,7 @@ def pull(
         FileNotFoundError: If the template directory doesn't exist or .boilersync file not found
         FileExistsError: If the target directory is not empty and allow_non_empty is False
         RuntimeError: If allow_non_empty is True but git repo has uncommitted changes
+        ValueError: If a circular dependency is detected in template inheritance
     """
     target_dir = Path.cwd()
 
@@ -263,11 +327,23 @@ def pull(
     # At this point template_name should not be None
     assert template_name is not None, "Template name should be set by now"
 
-    template_dir = paths.boilerplate_dir / template_name
-    if not template_dir.exists():
-        raise FileNotFoundError(
-            f"Template '{template_name}' not found in {paths.boilerplate_dir}"
-        )
+    # Get the full inheritance chain for the template
+    try:
+        inheritance_chain = get_template_inheritance_chain(template_name)
+        if len(inheritance_chain) > 1:
+            click.echo(
+                f"🔗 Template inheritance chain: {' → '.join(inheritance_chain)}"
+            )
+    except ValueError as e:
+        raise ValueError(f"Template inheritance error: {e}") from e
+
+    # Verify all templates in the chain exist
+    for tmpl_name in inheritance_chain:
+        template_dir = paths.boilerplate_dir / tmpl_name
+        if not template_dir.exists():
+            raise FileNotFoundError(
+                f"Template '{tmpl_name}' not found in {paths.boilerplate_dir}"
+            )
 
     # Check if directory has any files besides .DS_Store
     has_files = any(p for p in target_dir.iterdir() if p.name != ".DS_Store")
@@ -318,18 +394,30 @@ def pull(
     if collected_variables:
         interpolation_context.set_collected_variables(collected_variables)
 
-    # Process the template directory with interpolation
-    if include_starter:
-        # Include all files including starter files
-        process_template_directory(template_dir, target_dir)
-    else:
-        # Exclude starter files
-        process_template_directory_excluding_starter(template_dir, target_dir)
+    # Process each template in the inheritance chain
+    for i, tmpl_name in enumerate(inheritance_chain):
+        template_dir = paths.boilerplate_dir / tmpl_name
+
+        if len(inheritance_chain) > 1:
+            if i == 0:
+                click.echo(f"\n📦 Processing parent template '{tmpl_name}'...")
+            elif i == len(inheritance_chain) - 1:
+                click.echo(f"\n📦 Processing child template '{tmpl_name}'...")
+            else:
+                click.echo(f"\n📦 Processing intermediate template '{tmpl_name}'...")
+
+        # Process the template directory with interpolation
+        if include_starter:
+            # Include all files including starter files
+            process_template_directory(template_dir, target_dir)
+        else:
+            # Exclude starter files
+            process_template_directory_excluding_starter(template_dir, target_dir)
 
     # Get all collected variables to save them
     collected_variables = interpolation_context.get_collected_variables()
 
-    # Create .boilersync file to track the template
+    # Create .boilersync file to track the template (save the final child template name)
     boilersync_file = target_dir / ".boilersync"
     boilersync_data = {
         "template": template_name,
@@ -370,6 +458,10 @@ def pull_cmd(template_name: str | None, include_starter: bool, no_children: bool
     TEMPLATE_NAME is the name of the template directory in the boilerplate directory.
     If not provided, will auto-detect from the nearest .boilersync file.
     Can be used in non-empty directories if the git repository is clean.
+
+    Templates can inherit from parent templates by including a template.json file
+    with a "parent" key. When pulling, parent templates are processed first,
+    then child templates, allowing for hierarchical template inheritance.
 
     By default, starter files (files with .starter extension) are excluded.
     Use --include-starter to include them.

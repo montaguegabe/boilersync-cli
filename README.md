@@ -8,8 +8,8 @@
 # Initialize a new project from a template
 boilersync init my-template-name
 
-# Show differences between your project and the original template
-boilersync diff
+# Show pusherences between your project and the original template
+boilersync push
 ```
 
 When you run the init command, you'll be prompted for project details:
@@ -28,7 +28,7 @@ Pretty name for display [My Cool App]: My Cool Application
 
 ### Project Name Variables
 
-When initializing a project, `boilersync` prompts you for a snake_case project name and a pretty display name, then generates variables in different naming conventions:
+When initializing a project, `boilersync` prompts you for a snake_case project name and a pretty display name, then generates variables in pusherent naming conventions:
 
 **For file/folder names (uppercase, no special symbols):**
 
@@ -119,9 +119,9 @@ After initialization, `boilersync` creates a `.boilersync` file in your project 
 
 This file uses the same variable names that templates reference, making it easy to understand and potentially use in other tools.
 
-## Diff Command
+## Push Command
 
-The `diff` command helps you see how your project has diverged from its original template. This is useful for:
+The `push` command helps you see how your project has diverged from its original template. This is useful for:
 
 - Understanding what changes you've made
 - Deciding what to sync when templates are updated
@@ -134,15 +134,15 @@ The `diff` command helps you see how your project has diverged from its original
 3. **Creates fresh template**: Initializes the template in a temporary directory using saved names
 4. **Sets up git**: Creates a git repo and commits the fresh template
 5. **Overlays your changes**: Copies your current project files over the fresh template
-6. **Opens diff viewer**: Launches GitHub Desktop to show the differences
+6. **Opens push viewer**: Launches GitHub Desktop to show the pusherences
 
 ### Usage
 
 ```bash
 $ cd my-project
-$ boilersync diff
+$ boilersync push
 
-🔍 Creating diff for template 'web-app'...
+🔍 Creating push for template 'web-app'...
 📦 Initializing fresh template in temporary directory...
 🚀 Initializing project from template 'web-app'
 📝 Using saved project name: my_project
@@ -151,10 +151,10 @@ $ boilersync diff
 📋 Copying current project files...
 🚀 Opening in GitHub Desktop...
 📂 Temporary directory created and opened in GitHub Desktop.
-⏳ Press Enter when you're done reviewing the diff...
+⏳ Press Enter when you're done reviewing the push...
 ```
 
-The diff will show:
+The push will show:
 
 - **Green (additions)**: Your custom changes and new files
 - **Red (deletions)**: Template parts you've removed or modified
