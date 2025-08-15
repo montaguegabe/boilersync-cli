@@ -6,7 +6,7 @@ from boilersync.commands.pull import pull
 from boilersync.paths import paths
 
 
-def init(template_name: str, current_dir: Path) -> None:
+def init(template_name: str, current_dir: Path, collected_variables=None, project_name=None) -> None:
     """Initialize a new project from a template (empty directory only).
 
     Args:
@@ -19,9 +19,19 @@ def init(template_name: str, current_dir: Path) -> None:
 
     # Check for parent .boilersync files before initializing
     parent_dir = paths.find_parent_boilersync(current_dir)
+    print(f"current_dir: {current_dir}")
+    print(f"parent_dir: {parent_dir}")
 
     # Initialize the project
-    pull(template_name, allow_non_empty=False, include_starter=True, _recursive=False)
+    pull(
+        template_name,
+        allow_non_empty=False,
+        include_starter=True,
+        _recursive=False,
+        collected_variables=collected_variables,
+        current_dir=current_dir,
+        project_name=project_name,
+    )
 
     # If we found a parent .boilersync, register this project as a child
     if parent_dir is not None:

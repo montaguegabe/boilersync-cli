@@ -281,6 +281,7 @@ def pull(
     allow_non_empty: bool = False,
     include_starter: bool = False,
     _recursive: bool = True,
+    current_dir: Path | None = None,
 ) -> None:
     """Pull template/boilerplate changes to the current project.
 
@@ -299,7 +300,7 @@ def pull(
         RuntimeError: If allow_non_empty is True but git repo has uncommitted changes
         ValueError: If a circular dependency is detected in template inheritance
     """
-    target_dir = Path.cwd()
+    target_dir = current_dir or Path.cwd()
 
     # Auto-detect template name from .boilersync file if not provided
     if template_name is None:
@@ -350,7 +351,7 @@ def pull(
 
     if has_files:
         if not allow_non_empty:
-            raise FileExistsError("Target directory is not empty")
+            raise FileExistsError(f"Target directory is not empty: {target_dir}")
         else:
             # Check if git repo is clean
             if not is_git_repo_clean(target_dir):

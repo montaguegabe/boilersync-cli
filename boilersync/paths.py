@@ -9,19 +9,19 @@ logger = logging.getLogger(__name__)
 
 
 class Paths:
-    @cached_property
     def root_dir(self) -> Path:
         return self._get_root()
 
-    @cached_property
     def boilersync_json_path(self) -> Path:
         return self.root_dir / ".boilersync"
 
     @cached_property
     def boilerplate_dir(self) -> Path:
-        return Path(
-            "/Users/gabemontague/Dropbox/Mac/Documents/Documents/Developer/code/boilerplate/"
-        )
+        env_path = os.environ.get("BOILERSYNC_TEMPLATE_DIR", "")
+        if env_path:
+            return Path(env_path).expanduser()
+        # Default to ~/boilerplate if not set
+        return Path.home() / "boilerplate"
 
     @cached_property
     def user_config_path(self) -> Path:
