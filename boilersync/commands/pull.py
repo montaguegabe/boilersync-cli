@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Set
@@ -12,7 +13,10 @@ from boilersync.paths import paths
 from boilersync.template_processor import (
     process_template_directory,
 )
+from boilersync.utils import prompt_or_default
 from boilersync.variable_collector import collect_missing_variables
+
+logger = logging.getLogger(__name__)
 
 
 def is_git_repo_clean(target_dir: Path) -> bool:
@@ -91,7 +95,7 @@ def scan_template_for_variables_excluding_starter(source_dir: Path) -> Set[str]:
 
 
 def copy_and_process_template_excluding_starter(
-    source_dir: Path, target_dir: Path, context: dict[str, Any]
+    source_dir: Path, target_dir: Path, context: dict[str, Any], no_input: bool
 ) -> None:
     """Copy template directory and process files, excluding starter files.
 
@@ -126,7 +130,7 @@ def copy_and_process_template_excluding_starter(
             shutil.copy2(src_path, final_dst_path)
 
             # Process the file content with Jinja2
-            process_template_file(final_dst_path, context)
+            process_template_file(final_dst_path, context, no_input=no_input)
 
         elif src_path.is_dir():
             # Interpolate the destination directory name
@@ -148,7 +152,7 @@ def copy_and_process_template_excluding_starter(
 
 
 def process_template_directory_excluding_starter(
-    template_dir: Path, target_dir: Path
+    template_dir: Path, target_dir: Path, no_input: bool
 ) -> None:
     """Process a template directory excluding starter files.
 
@@ -160,11 +164,13 @@ def process_template_directory_excluding_starter(
     template_variables = scan_template_for_variables_excluding_starter(template_dir)
 
     # Collect any missing variables from the user
-    collect_missing_variables(template_variables)
+    collect_missing_variables(template_variables, no_input)
 
     # Now process the template with the complete context (excluding starter files)
     context = interpolation_context.get_context()
-    copy_and_process_template_excluding_starter(template_dir, target_dir, context)
+    copy_and_process_template_excluding_starter(
+        template_dir, target_dir, context, no_input=no_input
+    )
 
 
 def pull_children(boilersync_path: Path, include_starter: bool = False) -> None:
@@ -179,17 +185,17 @@ def pull_children(boilersync_path: Path, include_starter: bool = False) -> None:
     if not child_paths:
         return
 
-    click.echo(f"\n🔄 Found {len(child_paths)} child project(s) to update:")
+    logger.info(f"\n🔄 Found {len(child_paths)} child project(s) to update:")
 
     for child_path in child_paths:
-        click.echo(f"  📁 {child_path.relative_to(boilersync_path.parent)}")
+        logger.info(f"  📁 {child_path.relative_to(boilersync_path.parent)}")
 
     # Save current directory
     original_cwd = Path.cwd()
 
     try:
         for child_path in child_paths:
-            click.echo(f"\n🔄 Updating child project: {child_path.name}")
+            logger.info(f"\n🔄 Updating child project: {child_path.name}")
 
             # Change to child directory
             os.chdir(child_path)
@@ -201,9 +207,9 @@ def pull_children(boilersync_path: Path, include_starter: bool = False) -> None:
                     include_starter=include_starter,
                     _recursive=False,
                 )
-                click.echo(f"✅ Updated child project: {child_path.name}")
+                logger.info(f"✅ Updated child project: {child_path.name}")
             except Exception as e:
-                click.echo(f"❌ Failed to update child project {child_path.name}: {e}")
+                logger.info(f"❌ Failed to update child project {child_path.name}: {e}")
 
     finally:
         # Always restore original directory
@@ -275,13 +281,15 @@ def get_template_inheritance_chain(
 
 def pull(
     template_name: str | None = None,
+    *,
     project_name: str | None = None,
     pretty_name: str | None = None,
     collected_variables: dict[str, Any] | None = None,
     allow_non_empty: bool = False,
     include_starter: bool = False,
-    _recursive: bool = True,
+    no_input: bool = False,
     current_dir: Path | None = None,
+    _recursive: bool = True,
 ) -> None:
     """Pull template/boilerplate changes to the current project.
 
@@ -316,7 +324,7 @@ def pull(
                 pretty_name = boilersync_data.get("name_pretty")
             if collected_variables is None:
                 collected_variables = boilersync_data.get("variables", {})
-            click.echo(
+            logger.info(
                 f"📋 Auto-detected template '{template_name}' from .boilersync file"
             )
         except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
@@ -332,7 +340,7 @@ def pull(
     try:
         inheritance_chain = get_template_inheritance_chain(template_name)
         if len(inheritance_chain) > 1:
-            click.echo(
+            logger.info(
                 f"🔗 Template inheritance chain: {' → '.join(inheritance_chain)}"
             )
     except ValueError as e:
@@ -359,15 +367,15 @@ def pull(
                     "Cannot pull into non-empty directory with uncommitted changes. "
                     "Please commit or stash your changes first."
                 )
-            click.echo("⚠️  Pulling into non-empty directory (git repo is clean)")
+            logger.info("⚠️  Pulling into non-empty directory (git repo is clean)")
 
     # If project names are provided, use them; otherwise prompt user
     if project_name is not None and pretty_name is not None:
         snake_name = project_name
         final_pretty_name = pretty_name
-        click.echo(f"\n🚀 Pulling from template '{template_name}'")
-        click.echo(f"📝 Using saved project name: {snake_name}")
-        click.echo(f"📝 Using saved pretty name: {final_pretty_name}")
+        logger.info(f"\n🚀 Pulling from template '{template_name}'")
+        logger.info(f"📝 Using saved project name: {snake_name}")
+        logger.info(f"📝 Using saved pretty name: {final_pretty_name}")
     else:
         # Get the default snake_case name from the directory
         directory_name = target_dir.name
@@ -375,18 +383,24 @@ def pull(
         default_pretty_name = snake_to_pretty(default_snake_name)
 
         # Prompt user for project names
-        click.echo(f"\n🚀 Pulling from template '{template_name}'")
-        click.echo("=" * 50)
+        logger.info(f"\n🚀 Pulling from template '{template_name}'")
+        logger.info("=" * 50)
 
-        snake_name = click.prompt(
-            "Project name (snake_case)", default=default_snake_name, type=str
+        snake_name = prompt_or_default(
+            "Project name (snake_case)",
+            default=default_snake_name,
+            type=str,
+            no_input=no_input,
         )
 
-        final_pretty_name = click.prompt(
-            "Pretty name for display", default=default_pretty_name, type=str
+        final_pretty_name = prompt_or_default(
+            "Pretty name for display",
+            default=default_pretty_name,
+            type=str,
+            no_input=no_input,
         )
 
-        click.echo("=" * 50)
+        logger.info("=" * 50)
 
     # Set up interpolation context with project names
     interpolation_context.set_project_names(snake_name, final_pretty_name)
@@ -401,19 +415,21 @@ def pull(
 
         if len(inheritance_chain) > 1:
             if i == 0:
-                click.echo(f"\n📦 Processing parent template '{tmpl_name}'...")
+                logger.info(f"\n📦 Processing parent template '{tmpl_name}'...")
             elif i == len(inheritance_chain) - 1:
-                click.echo(f"\n📦 Processing child template '{tmpl_name}'...")
+                logger.info(f"\n📦 Processing child template '{tmpl_name}'...")
             else:
-                click.echo(f"\n📦 Processing intermediate template '{tmpl_name}'...")
+                logger.info(f"\n📦 Processing intermediate template '{tmpl_name}'...")
 
         # Process the template directory with interpolation
         if include_starter:
             # Include all files including starter files
-            process_template_directory(template_dir, target_dir)
+            process_template_directory(template_dir, target_dir, no_input=no_input)
         else:
             # Exclude starter files
-            process_template_directory_excluding_starter(template_dir, target_dir)
+            process_template_directory_excluding_starter(
+                template_dir, target_dir, no_input=no_input
+            )
 
     # Get all collected variables to save them
     collected_variables = interpolation_context.get_collected_variables()
@@ -431,14 +447,14 @@ def pull(
         json.dump(boilersync_data, f, indent=2)
 
     if has_files and allow_non_empty:
-        click.echo(
+        logger.info(
             f"\n✅ Template '{template_name}' pulled successfully into existing project!"
         )
     else:
-        click.echo(
+        logger.info(
             f"\n✅ Project initialized successfully from template '{template_name}'!"
         )
-    click.echo("📁 Created .boilersync file to track template origin")
+    logger.info("📁 Created .boilersync file to track template origin")
 
     # Pull updates for child projects if recursive is enabled
     if _recursive:

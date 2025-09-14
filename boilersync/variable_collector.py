@@ -5,6 +5,7 @@ from jinja2 import Environment, meta
 
 from boilersync.interpolation_context import interpolation_context
 from boilersync.user_settings import user_settings
+from boilersync.utils import prompt_or_default
 
 
 def create_jinja_environment(loader=None) -> Environment:
@@ -81,7 +82,7 @@ def convert_string_to_appropriate_type(value: str) -> Any:
     return value
 
 
-def collect_missing_variables(template_variables: Set[str]) -> None:
+def collect_missing_variables(template_variables: Set[str], no_input: bool) -> None:
     """Collect any missing variables from the user.
 
     Args:
@@ -119,9 +120,15 @@ def collect_missing_variables(template_variables: Set[str]) -> None:
 
             # Use recent value as default if available
             if recent_value:
-                value = click.prompt(prompt_text, default=recent_value, type=str)
-            else:
+                value = prompt_or_default(
+                    prompt_text, default=recent_value, type=str, no_input=no_input
+                )
+            elif not no_input:
                 value = click.prompt(prompt_text, type=str)
+            else:
+                raise ValueError(
+                    f"No input mode, and unable to find default value for: {var}."
+                )
 
             # Convert the string value to appropriate type for template processing
             converted_value = convert_string_to_appropriate_type(value)

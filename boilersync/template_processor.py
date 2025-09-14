@@ -185,7 +185,9 @@ def copy_and_process_template(
         process_item(item, item_dst)
 
 
-def process_template_directory(template_dir: Path, target_dir: Path) -> None:
+def process_template_directory(
+    template_dir: Path, target_dir: Path, no_input: bool
+) -> None:
     """Process a template directory with the current interpolation context.
 
     Args:
@@ -196,7 +198,7 @@ def process_template_directory(template_dir: Path, target_dir: Path) -> None:
     template_variables = scan_template_for_variables(template_dir)
 
     # Collect any missing variables from the user
-    collect_missing_variables(template_variables)
+    collect_missing_variables(template_variables, no_input)
 
     # Now process the template with the complete context
     context = interpolation_context.get_context()
