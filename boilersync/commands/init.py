@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def init(
     template_name: str,
-    current_dir: Path,
+    target_dir: Path,
     collected_variables=None,
     project_name=None,
     no_input=False,
@@ -27,7 +27,7 @@ def init(
     """
 
     # Check for parent .boilersync files before initializing
-    parent_dir = paths.find_parent_boilersync(current_dir)
+    parent_dir = paths.find_parent_boilersync(target_dir)
 
     # Initialize the project
     pull(
@@ -36,7 +36,7 @@ def init(
         include_starter=True,
         _recursive=False,
         collected_variables=collected_variables,
-        current_dir=current_dir,
+        target_dir=target_dir,
         project_name=project_name,
         no_input=no_input,
     )
@@ -44,7 +44,7 @@ def init(
     # If we found a parent .boilersync, register this project as a child
     if parent_dir is not None:
         parent_boilersync_path = parent_dir / ".boilersync"
-        paths.add_child_to_parent(current_dir, parent_boilersync_path)
+        paths.add_child_to_parent(target_dir, parent_boilersync_path)
         logger.info(f"📎 Registered as child project in parent: {parent_dir}")
 
 
@@ -57,4 +57,4 @@ def init_cmd(template_name: str, no_input: bool = False):
     TEMPLATE_NAME is the name of the template directory in the boilerplate directory.
     This command only works in empty directories.
     """
-    init(template_name, Path.cwd(), no_input=no_input)
+    init(template_name, target_dir=Path.cwd(), no_input=no_input)
