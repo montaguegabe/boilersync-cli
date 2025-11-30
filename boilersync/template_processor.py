@@ -125,6 +125,7 @@ def process_template_file(file_path: Path, context: Dict[str, Any]) -> None:
     """
     # Create Jinja2 environment with custom delimiters and file loader
     env = create_jinja_environment(loader=FileSystemLoader(file_path.parent))
+    env.keep_trailing_newline = True
 
     try:
         # Load and render the template

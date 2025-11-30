@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-from functools import cached_property
 from pathlib import Path
 from typing import Optional
 
@@ -9,21 +8,27 @@ logger = logging.getLogger(__name__)
 
 
 class Paths:
+    @property
     def root_dir(self) -> Path:
         return self._get_root()
 
+    @property
     def boilersync_json_path(self) -> Path:
         return self.root_dir / ".boilersync"
 
-    @cached_property
+    @property
     def boilerplate_dir(self) -> Path:
         env_path = os.environ.get("BOILERSYNC_TEMPLATE_DIR", "")
         if env_path:
             return Path(env_path).expanduser()
-        # Default to ~/boilerplate if not set
-        return Path.home() / "boilerplate"
+        openbase_boilerplate_path = Path.home() / ".openbase" / "boilerplate"
 
-    @cached_property
+        if openbase_boilerplate_path.exists():
+            return openbase_boilerplate_path
+        else:
+            return Path.home() / "Developer" / "boilerplate"
+
+    @property
     def user_config_path(self) -> Path:
         """Path to the user's global boilersync configuration file."""
         return Path.home() / ".boilersync_config"
