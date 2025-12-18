@@ -456,6 +456,16 @@ def pull(
         )
     logger.info("📁 Created .boilersync file to track template origin")
 
+    # Initialize git repo and commit if include_starter is True and .git doesn't exist
+    if include_starter:
+        git_dir = target_dir / ".git"
+        if not git_dir.exists():
+            logger.info("\n🔧 Initializing git repository...")
+            repo = Repo.init(target_dir)
+            repo.git.add(".")
+            repo.index.commit(f"Initial commit from template '{template_name}'")
+            logger.info("✅ Git repository initialized and all changes committed")
+
     # Pull updates for child projects if recursive is enabled
     if _recursive:
         pull_children(boilersync_file, include_starter)
