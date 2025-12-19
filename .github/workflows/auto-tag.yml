@@ -1,0 +1,44 @@
+name: Auto Tag on Push to Main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  auto-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag and bump version
+        id: bump
+        run: |
+          # Get the latest version tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          # Parse version numbers
+          VERSION=${LATEST_TAG#v}
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+          NEW_TAG="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+
+          echo "New tag: $NEW_TAG"
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.bump.outputs.new_tag }}
+          git push origin ${{ steps.bump.outputs.new_tag }}

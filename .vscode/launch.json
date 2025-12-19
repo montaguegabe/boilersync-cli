@@ -20,7 +20,7 @@
             }
         },
         {
-            "name": "Boilersync (zebra-crossing)",
+            "name": "boilersync push",
             "type": "debugpy",
             "request": "launch",
             "module": "boilersync",
@@ -29,7 +29,7 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "cwd": "${workspaceFolder}/playground/zebra-crossing"
+            "cwd": "/Users/gabemontague/Projects/openbase/code/demos/mind-ai/mind-ai-react"
         }
     ]
 }
