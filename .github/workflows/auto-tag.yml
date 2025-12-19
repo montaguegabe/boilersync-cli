@@ -1,4 +1,4 @@
-name: Auto Tag on Push to Main
+name: Auto Release on Push to Main
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  auto-tag:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -16,23 +16,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get latest tag and bump version
-        id: bump
+      - name: Get latest tag and create new version
+        id: tag
         run: |
-          # Get the latest version tag
-          LATEST_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || echo "v0.0.0")
+          # Get the latest tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "Latest tag: $LATEST_TAG"
 
-          # Parse version numbers
+          # Extract version numbers (remove 'v' prefix)
           VERSION=${LATEST_TAG#v}
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3)
+
+          # Split into major.minor.patch
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
           # Increment patch version
-          NEW_PATCH=$((PATCH + 1))
-          NEW_TAG="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+          PATCH=$((PATCH + 1))
 
+          # Create new tag
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
           echo "New tag: $NEW_TAG"
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
 
@@ -40,5 +41,22 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ steps.bump.outputs.new_tag }}
-          git push origin ${{ steps.bump.outputs.new_tag }}
+          git tag ${{ steps.tag.outputs.new_tag }}
+          git push origin ${{ steps.tag.outputs.new_tag }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build twine hatch hatch-vcs
+
+      - name: Build PyPI package
+        run: hatch build
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
