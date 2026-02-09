@@ -1,7 +1,6 @@
 import functools
 import logging
 import sys
-import traceback
 
 import click
 
@@ -33,17 +32,17 @@ def common_command_wrapper(command_to_wrap: click.Command) -> click.Command:
         configure_logging(level=log_level)
 
         exit_code = None
-        try:
+        if True:
             # Call the original command's callback with its intended kwargs
             return original_callback(**kwargs)
-        except Exception as e:
-            logger = logging.getLogger(__name__)  # Get logger after configuration
-            logger.error(str(e))  # This will use the emoji formatter
-            if verbose_value:
-                # For verbose mode, also print traceback directly to stderr
-                click.secho("\nDebug traceback:", fg="yellow", err=True)
-                click.secho(traceback.format_exc(), fg="yellow", err=True)
-            exit_code = 1
+        # except Exception as e:
+        #     logger = logging.getLogger(__name__)  # Get logger after configuration
+        #     logger.error(str(e))  # This will use the emoji formatter
+        #     if verbose_value:
+        #         # For verbose mode, also print traceback directly to stderr
+        #         click.secho("\nDebug traceback:", fg="yellow", err=True)
+        #         click.secho(traceback.format_exc(), fg="yellow", err=True)
+        #     exit_code = 1
 
         if exit_code is not None:
             sys.exit(exit_code)

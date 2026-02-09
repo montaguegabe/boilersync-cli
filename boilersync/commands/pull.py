@@ -370,17 +370,24 @@ def pull(
             logger.info("⚠️  Pulling into non-empty directory (git repo is clean)")
 
     # If project names are provided, use them; otherwise prompt user
-    if project_name is not None and pretty_name is not None:
+    if project_name is not None:
         snake_name = project_name
-        final_pretty_name = pretty_name
+        # Auto-generate pretty name if not provided
+        final_pretty_name = (
+            pretty_name if pretty_name is not None else snake_to_pretty(project_name)
+        )
         logger.info(f"\n🚀 Pulling from template '{template_name}'")
-        logger.info(f"📝 Using saved project name: {snake_name}")
-        logger.info(f"📝 Using saved pretty name: {final_pretty_name}")
+        logger.info(f"📝 Using project name: {snake_name}")
+        logger.info(f"📝 Using pretty name: {final_pretty_name}")
     else:
         # Get the default snake_case name from the directory
         directory_name = target_dir.name
         default_snake_name = normalize_to_snake(directory_name)
-        default_pretty_name = snake_to_pretty(default_snake_name)
+        default_pretty_name = (
+            pretty_name
+            if pretty_name is not None
+            else snake_to_pretty(default_snake_name)
+        )
 
         # Prompt user for project names
         logger.info(f"\n🚀 Pulling from template '{template_name}'")

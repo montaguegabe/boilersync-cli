@@ -184,11 +184,11 @@ def reverse_interpolate_project_files(
         if reverse_interpolated_name != original_name:
             # Rename the file to use template placeholders
             new_path = file_path.parent / reverse_interpolated_name
-            try:
-                file_path.rename(new_path)
-            except FileExistsError:
-                # If target exists, skip the rename to avoid conflicts
-                pass
+            # If target file already exists (e.g., from template copy), remove it first
+            # since it's stale and will be replaced by the project's version
+            if new_path.exists():
+                new_path.unlink()
+            file_path.rename(new_path)
 
     # Process directories in reverse depth order (deepest first) to avoid conflicts
     dirs_to_process.sort(key=lambda p: len(p.parts), reverse=True)
@@ -203,11 +203,11 @@ def reverse_interpolate_project_files(
         if reverse_interpolated_name != original_name:
             # Rename the directory to use template placeholders
             new_path = dir_path.parent / reverse_interpolated_name
-            try:
-                dir_path.rename(new_path)
-            except (FileExistsError, OSError) as e:
-                # If target exists or other OS error, skip the rename to avoid conflicts
-                raise e
+            # If target directory already exists (e.g., from template copy), remove it first
+            # since its contents are stale and will be replaced by the project's version
+            if new_path.exists() and new_path.is_dir():
+                shutil.rmtree(new_path)
+            dir_path.rename(new_path)
 
 
 def copy_changed_files_to_template(
