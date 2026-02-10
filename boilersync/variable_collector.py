@@ -1,11 +1,9 @@
-from typing import Any, Dict, Set
+from typing import Any, Set
 
 import click
 from jinja2 import Environment, meta
 
 from boilersync.interpolation_context import interpolation_context
-from boilersync.user_settings import user_settings
-from boilersync.utils import prompt_or_default
 
 
 def create_jinja_environment(loader=None) -> Environment:
@@ -87,6 +85,7 @@ def collect_missing_variables(template_variables: Set[str], no_input: bool) -> N
 
     Args:
         template_variables: Variables found in template content
+        no_input: If True, raise an error for missing variables instead of prompting
     """
     missing_variables = []
 
@@ -95,15 +94,16 @@ def collect_missing_variables(template_variables: Set[str], no_input: bool) -> N
             missing_variables.append(var)
 
     if missing_variables:
+        if no_input:
+            raise ValueError(
+                f"Missing required template variables: {', '.join(sorted(missing_variables))}. "
+                f"Use --var to provide them."
+            )
+
         click.echo("\n🔧 Additional variables needed for this template:")
         click.echo("=" * 50)
 
-        collected_variables: Dict[str, str] = {}
-
         for var in sorted(missing_variables):
-            # Get recent value as default
-            recent_value = user_settings.get_recent_variable_value(var)
-
             # Provide helpful prompts based on variable name patterns
             prompt_text = f"Enter value for '{var}'"
 
@@ -118,26 +118,11 @@ def collect_missing_variables(template_variables: Set[str], no_input: bool) -> N
             elif var.lower().endswith("_description"):
                 prompt_text += " (description)"
 
-            # Use recent value as default if available
-            if recent_value:
-                value = prompt_or_default(
-                    prompt_text, default=recent_value, type=str, no_input=no_input
-                )
-            elif not no_input:
-                value = click.prompt(prompt_text, type=str)
-            else:
-                raise ValueError(
-                    f"No input mode, and unable to find default value for: {var}."
-                )
+            value = click.prompt(prompt_text, type=str)
 
             # Convert the string value to appropriate type for template processing
             converted_value = convert_string_to_appropriate_type(value)
             interpolation_context.set_collected_variable(var, converted_value)
-            collected_variables[var] = value  # Save original string for user settings
-
-        # Save all collected variables to user settings
-        if collected_variables:
-            user_settings.save_multiple_variables(collected_variables)
 
         click.echo("=" * 50)
         click.echo("✅ All variables collected!\n")

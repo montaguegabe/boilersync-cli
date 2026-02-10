@@ -28,11 +28,6 @@ class Paths:
         else:
             return Path.home() / "Developer" / "boilerplate"
 
-    @property
-    def user_config_path(self) -> Path:
-        """Path to the user's global boilersync configuration file."""
-        return Path.home() / ".boilersync_config"
-
     def find_parent_boilersync(
         self, start_dir: Optional[Path] = None
     ) -> Optional[Path]:
