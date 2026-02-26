@@ -21,12 +21,7 @@ class Paths:
         env_path = os.environ.get("BOILERSYNC_TEMPLATE_DIR", "")
         if env_path:
             return Path(env_path).expanduser()
-        openbase_boilerplate_path = Path.home() / ".openbase" / "boilerplate"
-
-        if openbase_boilerplate_path.exists():
-            return openbase_boilerplate_path
-        else:
-            return Path.home() / "Developer" / "boilerplate"
+        return Path.home() / ".boilersync" / "templates"
 
     def find_parent_boilersync(
         self, start_dir: Optional[Path] = None

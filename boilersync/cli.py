@@ -5,6 +5,7 @@ from boilersync.cli_helpers import common_command_wrapper
 from boilersync.commands.init import init_cmd
 from boilersync.commands.pull import pull_cmd
 from boilersync.commands.push import push_cmd
+from boilersync.commands.templates import templates_cmd
 
 
 def print_version(ctx, param, value):
@@ -32,6 +33,7 @@ def main():
 main.add_command(common_command_wrapper(init_cmd))
 main.add_command(common_command_wrapper(pull_cmd))
 main.add_command(common_command_wrapper(push_cmd))
+main.add_command(templates_cmd)
 
 
 if __name__ == "__main__":

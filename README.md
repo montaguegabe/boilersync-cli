@@ -5,6 +5,9 @@
 ## Quick Start
 
 ```bash
+# Initialize local templates directory by cloning your template repo
+boilersync templates init https://github.com/your-org/your-templates.git
+
 # Initialize a new project from a template
 boilersync init my-template-name
 
@@ -179,6 +182,27 @@ Files with `.starter` as the first extension are "starter files" - they're used 
 - `tutorial.starter.md.boilersync` → `tutorial.md` (processed + init only)
 
 ### Template Directory Structure
+
+By default, templates are loaded from:
+
+```bash
+~/.boilersync/templates
+```
+
+You can override this with:
+
+```bash
+BOILERSYNC_TEMPLATE_DIR=/custom/templates/path
+```
+
+Initialize the templates directory with:
+
+```bash
+boilersync templates init [REPO_URL]
+```
+
+If `REPO_URL` is omitted, Boilersync prompts for it and then runs a `git clone`
+into the configured templates directory.
 
 ```
 boilerplate/
