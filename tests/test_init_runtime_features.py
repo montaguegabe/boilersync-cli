@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from boilersync.commands.init import (
     _create_github_repo,
+    _evaluate_condition,
     _merge_runtime_config,
     init,
 )
@@ -172,6 +173,44 @@ class TestInitRuntimeFeatures(unittest.TestCase):
         self.assertNotIn("source", root_boilersync_data)
         self.assertEqual(root_boilersync_data["children"], ["demo-workspace-child"])
 
+    def test_init_with_local_child_template_name(self) -> None:
+        target_dir = self.root / "workspace-local-child"
+        target_dir.mkdir()
+
+        _write_template(
+            self.template_root_dir,
+            org=self.org,
+            repo=self.repo,
+            subdir="workspace-template-local",
+            files={"README.md.boilersync": "Workspace\n"},
+            config={
+                "children": [
+                    {
+                        "template": "child-template-local",
+                        "path": "child-project",
+                    }
+                ],
+                "skip_git": True,
+            },
+        )
+        _write_template(
+            self.template_root_dir,
+            org=self.org,
+            repo=self.repo,
+            subdir="child-template-local",
+            files={"child.txt.boilersync": "child\n"},
+            config={"skip_git": True},
+        )
+
+        init(
+            self._template_ref("workspace-template-local"),
+            target_dir=target_dir,
+            project_name="demo_workspace",
+            no_input=True,
+        )
+
+        self.assertTrue((target_dir / "child-project" / "child.txt").exists())
+
     @patch("boilersync.commands.init.subprocess.run")
     def test_create_github_repo_with_condition(self, mock_run) -> None:
         mock_run.side_effect = [
@@ -210,6 +249,23 @@ class TestInitRuntimeFeatures(unittest.TestCase):
             mock_run.call_args_list[2].args[0],
             ["gh", "repo", "create", "gabe/demo-repo", "--public"],
         )
+
+    @patch("boilersync.commands.init.subprocess.run")
+    def test_create_github_repo_skips_when_condition_variable_missing(self, mock_run) -> None:
+        _create_github_repo(
+            {
+                "create_repo": True,
+                "repo_name": "demo-repo",
+                "private": False,
+                "condition": "with_github",
+            },
+            target_dir=self.root,
+            context={},
+        )
+        mock_run.assert_not_called()
+
+    def test_evaluate_condition_unknown_identifier_is_false(self) -> None:
+        self.assertFalse(_evaluate_condition("with_github", {}))
 
 
 if __name__ == "__main__":

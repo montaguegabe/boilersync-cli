@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from boilersync.variable_collector import (
 )
 
 logger = logging.getLogger(__name__)
+_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _merge_runtime_config(inheritance_chain: list[TemplateSource]) -> dict[str, Any]:
@@ -138,6 +140,9 @@ def _evaluate_condition(condition: Any, context: dict[str, Any]) -> bool:
 
     if rendered_condition in context:
         return bool(context[rendered_condition])
+
+    if _IDENTIFIER_PATTERN.match(rendered_condition):
+        return False
 
     return bool(_parse_condition_token(rendered_condition, context))
 
@@ -260,6 +265,22 @@ def _normalize_template_variables(
     if template_variables:
         merged.update(template_variables)
     return merged or None
+
+
+def _resolve_child_template_ref(parent_template_ref: str, child_template_ref: str) -> str:
+    if "#" in child_template_ref:
+        return child_template_ref
+
+    if "#" not in parent_template_ref:
+        raise ValueError(
+            "Child templates without a source qualifier require a source-qualified parent template ref."
+        )
+
+    parent_repo_locator, _ = parent_template_ref.split("#", 1)
+    child_subdir = child_template_ref.strip().lstrip("/")
+    if not child_subdir:
+        raise ValueError("Child template ref cannot be empty.")
+    return f"{parent_repo_locator}#{child_subdir}"
 
 
 def init(
@@ -385,8 +406,13 @@ def init(
                     runtime_context,
                 )
 
-            init(
+            child_template_ref = _resolve_child_template_ref(
+                template_ref,
                 child_template_name,
+            )
+
+            init(
+                child_template_ref,
                 target_dir=child_target_dir,
                 template_variables=child_variables or None,
                 options=options,

@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 class Paths:
+    @staticmethod
+    def _is_boilersync_manifest(path: Path) -> bool:
+        return path.exists() and path.is_file()
+
     @property
     def root_dir(self) -> Path:
         return self._get_root()
@@ -46,7 +50,7 @@ class Paths:
         current = start_dir.parent
 
         while True:
-            if (current / ".boilersync").exists():
+            if self._is_boilersync_manifest(current / ".boilersync"):
                 return current
 
             if current.parent == current:  # Reached root directory
@@ -67,7 +71,7 @@ class Paths:
             # Read existing .boilersync file
             with open(parent_boilersync_path, "r", encoding="utf-8") as f:
                 parent_data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
+        except (FileNotFoundError, IsADirectoryError, json.JSONDecodeError):
             logger.warning(
                 f"Could not read parent .boilersync file at {parent_boilersync_path}"
             )
@@ -112,7 +116,7 @@ class Paths:
         try:
             with open(boilersync_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
+        except (FileNotFoundError, IsADirectoryError, json.JSONDecodeError):
             return []
 
         children = data.get("children", [])
@@ -145,7 +149,7 @@ class Paths:
         current = Path.cwd()
 
         while True:
-            if (current / ".boilersync").exists():
+            if self._is_boilersync_manifest(current / ".boilersync"):
                 return current
 
             if current.parent == current:  # Reached root directory

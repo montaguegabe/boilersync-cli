@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -20,6 +21,31 @@ class TestPaths(unittest.TestCase):
         path_helper = Paths()
         expected = Path.home() / "custom-templates"
         self.assertEqual(path_helper.template_root_dir, expected)
+
+    def test_find_parent_boilersync_ignores_directory_named_boilersync(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir) / "workspace"
+            workspace.mkdir()
+            (workspace / ".boilersync").mkdir()
+
+            child = workspace / "child"
+            child.mkdir()
+
+            parent = Paths().find_parent_boilersync(child)
+            self.assertIsNone(parent)
+
+    def test_root_dir_ignores_directory_named_boilersync(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir) / "workspace"
+            workspace.mkdir()
+            (workspace / ".boilersync").mkdir()
+
+            child = workspace / "child"
+            child.mkdir()
+
+            with patch("pathlib.Path.cwd", return_value=child):
+                with self.assertRaises(FileNotFoundError):
+                    _ = Paths().root_dir
 
 
 if __name__ == "__main__":
