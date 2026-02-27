@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,10 +15,17 @@ class TestTemplateInheritance(unittest.TestCase):
     def setUp(self):
         """Set up test environment with temporary directories."""
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.boilerplate_dir = Path(self.temp_dir.name)
+        self.template_root_dir = Path(self.temp_dir.name)
+        self.env_patcher = patch.dict(
+            os.environ,
+            {"BOILERSYNC_TEMPLATE_DIR": str(self.template_root_dir)},
+            clear=False,
+        )
+        self.env_patcher.start()
 
     def tearDown(self):
         """Clean up test environment."""
+        self.env_patcher.stop()
         self.temp_dir.cleanup()
 
     def create_template_dir(self, name: str, parent: str | None = None) -> Path:
@@ -30,7 +38,7 @@ class TestTemplateInheritance(unittest.TestCase):
         Returns:
             Path to the created template directory
         """
-        template_dir = self.boilerplate_dir / name
+        template_dir = self.template_root_dir / name
         template_dir.mkdir(parents=True)
 
         if parent:
@@ -76,40 +84,32 @@ class TestTemplateInheritance(unittest.TestCase):
         parent = get_parent_template(template_dir)
         self.assertIsNone(parent)
 
-    @patch("boilersync.commands.pull.paths")
-    def test_inheritance_chain_single_template(self, mock_paths):
+    def test_inheritance_chain_single_template(self):
         """Test inheritance chain for a template with no parent."""
-        mock_paths.boilerplate_dir = self.boilerplate_dir
         self.create_template_dir("standalone")
 
         chain = get_template_inheritance_chain("standalone")
-        self.assertEqual(chain, ["standalone"])
+        self.assertEqual([item.ref for item in chain], ["standalone"])
 
-    @patch("boilersync.commands.pull.paths")
-    def test_inheritance_chain_two_levels(self, mock_paths):
+    def test_inheritance_chain_two_levels(self):
         """Test inheritance chain for parent -> child."""
-        mock_paths.boilerplate_dir = self.boilerplate_dir
         self.create_template_dir("parent")
         self.create_template_dir("child", "parent")
 
         chain = get_template_inheritance_chain("child")
-        self.assertEqual(chain, ["parent", "child"])
+        self.assertEqual([item.ref for item in chain], ["parent", "child"])
 
-    @patch("boilersync.commands.pull.paths")
-    def test_inheritance_chain_three_levels(self, mock_paths):
+    def test_inheritance_chain_three_levels(self):
         """Test inheritance chain for grandparent -> parent -> child."""
-        mock_paths.boilerplate_dir = self.boilerplate_dir
         self.create_template_dir("grandparent")
         self.create_template_dir("parent", "grandparent")
         self.create_template_dir("child", "parent")
 
         chain = get_template_inheritance_chain("child")
-        self.assertEqual(chain, ["grandparent", "parent", "child"])
+        self.assertEqual([item.ref for item in chain], ["grandparent", "parent", "child"])
 
-    @patch("boilersync.commands.pull.paths")
-    def test_inheritance_chain_circular_dependency(self, mock_paths):
+    def test_inheritance_chain_circular_dependency(self):
         """Test that circular dependencies are detected."""
-        mock_paths.boilerplate_dir = self.boilerplate_dir
         self.create_template_dir("template_a", "template_b")
         self.create_template_dir("template_b", "template_a")
 
@@ -118,10 +118,8 @@ class TestTemplateInheritance(unittest.TestCase):
 
         self.assertIn("Circular dependency", str(cm.exception))
 
-    @patch("boilersync.commands.pull.paths")
-    def test_inheritance_chain_missing_parent(self, mock_paths):
+    def test_inheritance_chain_missing_parent(self):
         """Test handling of missing parent template."""
-        mock_paths.boilerplate_dir = self.boilerplate_dir
         self.create_template_dir("child", "nonexistent_parent")
 
         with self.assertRaises(FileNotFoundError) as cm:
@@ -129,10 +127,8 @@ class TestTemplateInheritance(unittest.TestCase):
 
         self.assertIn("nonexistent_parent", str(cm.exception))
 
-    @patch("boilersync.commands.pull.paths")
-    def test_inheritance_chain_missing_child(self, mock_paths):
+    def test_inheritance_chain_missing_child(self):
         """Test handling of missing child template."""
-        mock_paths.boilerplate_dir = self.boilerplate_dir
 
         with self.assertRaises(FileNotFoundError) as cm:
             get_template_inheritance_chain("nonexistent_child")

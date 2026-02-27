@@ -1,7 +1,7 @@
 import logging
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import click
@@ -13,6 +13,7 @@ from boilersync.commands.pull import (
 )
 from boilersync.interpolation_context import interpolation_context
 from boilersync.paths import paths
+from boilersync.template_sources import TemplateSource
 from boilersync.variable_collector import (
     convert_string_to_appropriate_type,
     create_jinja_environment,
@@ -21,7 +22,7 @@ from boilersync.variable_collector import (
 logger = logging.getLogger(__name__)
 
 
-def _merge_runtime_config(inheritance_chain: list[str]) -> dict[str, Any]:
+def _merge_runtime_config(inheritance_chain: list[TemplateSource]) -> dict[str, Any]:
     config: dict[str, Any] = {
         "children": [],
         "hooks": {
@@ -31,15 +32,14 @@ def _merge_runtime_config(inheritance_chain: list[str]) -> dict[str, Any]:
         "github": {},
     }
 
-    for template_name in inheritance_chain:
-        template_dir = paths.boilerplate_dir / template_name
-        template_config = get_template_config(template_dir)
+    for template_source in inheritance_chain:
+        template_config = get_template_config(template_source.template_dir)
 
         children = template_config.get("children", [])
         if children:
             if not isinstance(children, list):
                 raise ValueError(
-                    f"Template '{template_name}' has invalid 'children' config: expected list"
+                    f"Template '{template_source.ref}' has invalid 'children' config: expected list"
                 )
             config["children"].extend(children)
 
@@ -47,14 +47,14 @@ def _merge_runtime_config(inheritance_chain: list[str]) -> dict[str, Any]:
         if hooks:
             if not isinstance(hooks, dict):
                 raise ValueError(
-                    f"Template '{template_name}' has invalid 'hooks' config: expected object"
+                    f"Template '{template_source.ref}' has invalid 'hooks' config: expected object"
                 )
             for hook_key in ("pre_init", "post_init"):
                 hook_steps = hooks.get(hook_key, [])
                 if hook_steps:
                     if not isinstance(hook_steps, list):
                         raise ValueError(
-                            f"Template '{template_name}' has invalid '{hook_key}' config: expected list"
+                            f"Template '{template_source.ref}' has invalid '{hook_key}' config: expected list"
                         )
                     config["hooks"][hook_key].extend(hook_steps)
 
@@ -62,7 +62,7 @@ def _merge_runtime_config(inheritance_chain: list[str]) -> dict[str, Any]:
         if github:
             if not isinstance(github, dict):
                 raise ValueError(
-                    f"Template '{template_name}' has invalid 'github' config: expected object"
+                    f"Template '{template_source.ref}' has invalid 'github' config: expected object"
                 )
             config["github"].update(github)
 
@@ -263,7 +263,7 @@ def _normalize_template_variables(
 
 
 def init(
-    template_name: str,
+    template_ref: str,
     target_dir: Path,
     collected_variables: dict[str, Any] | None = None,
     template_variables: dict[str, Any] | None = None,
@@ -277,7 +277,7 @@ def init(
     """Initialize a new project from a template (empty directory only).
 
     Args:
-        template_name: Name of the template to use from the boilerplate directory
+        template_ref: Template reference to initialize from
 
     Raises:
         FileNotFoundError: If the template directory doesn't exist
@@ -291,12 +291,12 @@ def init(
 
     # Check for parent .boilersync files before initializing
     parent_dir = paths.find_parent_boilersync(target_dir)
-    inheritance_chain = get_template_inheritance_chain(template_name)
+    inheritance_chain = get_template_inheritance_chain(template_ref)
     runtime_config = _merge_runtime_config(inheritance_chain)
 
     # Initialize the project
     pull(
-        template_name,
+        template_ref,
         allow_non_empty=False,
         include_starter=True,
         _recursive=False,
@@ -407,21 +407,29 @@ def init(
         )
 
 
-def parse_var(ctx, param, value: tuple[str, ...]) -> dict[str, Any]:
-    """Parse --var options into a dictionary."""
+def parse_key_value_options(value: tuple[str, ...]) -> dict[str, Any]:
+    """Parse KEY=VALUE option values into a dictionary."""
     result: dict[str, Any] = {}
     for item in value:
         if "=" not in item:
-            raise click.BadParameter(
-                f"Variable must be in KEY=VALUE format, got: {item}"
-            )
+            raise click.BadParameter(f"Value must be in KEY=VALUE format, got: {item}")
         key, val = item.split("=", 1)
         result[key.strip()] = convert_string_to_appropriate_type(val)
     return result
 
 
+def parse_var(ctx, param, value: tuple[str, ...]) -> dict[str, Any]:
+    """Parse --var options into a dictionary."""
+    return parse_key_value_options(value)
+
+
+def parse_option(ctx, param, value: tuple[str, ...]) -> dict[str, Any]:
+    """Parse --option options into a dictionary."""
+    return parse_key_value_options(value)
+
+
 @click.command(name="init")
-@click.argument("template_name")
+@click.argument("template_ref")
 @click.option(
     "-n",
     "--name",
@@ -440,17 +448,29 @@ def parse_var(ctx, param, value: tuple[str, ...]) -> dict[str, Any]:
     callback=parse_var,
     help="Template variable in KEY=VALUE format (can be used multiple times)",
 )
+@click.option(
+    "-o",
+    "--option",
+    "runtime_options",
+    multiple=True,
+    callback=parse_option,
+    help="Template runtime option in KEY=VALUE format (can be used multiple times)",
+)
 @click.option("--no-input", is_flag=True, help="Do not prompt for input (use defaults)")
 def init_cmd(
-    template_name: str,
+    template_ref: str,
     project_name: str | None,
     pretty_name: str | None,
     variables: dict[str, Any],
+    runtime_options: dict[str, Any],
     no_input: bool,
 ):
     """Initialize a new project from a template (empty directory only).
 
-    TEMPLATE_NAME is the name of the template directory in the boilerplate directory.
+    TEMPLATE_REF is either:
+    - A legacy template name in the local template cache
+    - A source-qualified ref: ORG/REPO#SUBDIR (or URL#SUBDIR)
+
     This command only works in empty directories.
 
     For non-interactive usage, provide --name and any required template variables:
@@ -459,10 +479,11 @@ def init_cmd(
       boilersync init my-template --name my_project --var author_name="John Doe"
     """
     init(
-        template_name,
+        template_ref,
         target_dir=Path.cwd(),
         project_name=project_name,
         pretty_name=pretty_name,
         template_variables=variables if variables else None,
+        options=runtime_options if runtime_options else None,
         no_input=no_input,
     )

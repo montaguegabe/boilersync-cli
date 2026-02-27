@@ -10,6 +10,7 @@ import click
 from git import Repo
 
 from boilersync.paths import paths
+from boilersync.template_sources import resolve_source_from_boilersync
 from boilersync.template_processor import (
     process_file_extensions,
 )
@@ -216,7 +217,7 @@ def copy_changed_files_to_template(
     template_name: str,
     files_to_add: Optional[List[str]] = None,
 ) -> List[str]:
-    """Copy changed files from the temporary repo back to the boilerplate template.
+    """Copy changed files from the temporary repo back to the template.
 
     Args:
         temp_repo_dir: Path to the temporary git repository
@@ -266,7 +267,7 @@ def copy_changed_files_to_template(
         click.echo(f"📋 Found {len(changed_files)} file(s) to process:")
         for file_path in changed_files:
             if files_to_add and file_path in files_to_add:
-                click.echo(f"  • {file_path} (added to boilerplate)")
+                click.echo(f"  • {file_path} (added to template)")
             else:
                 click.echo(f"  • {file_path}")
 
@@ -300,7 +301,7 @@ def copy_changed_files_to_template(
                 shutil.copy2(source_file, final_target)
                 updated_files.append(file_path)
                 if files_to_add and file_path in files_to_add:
-                    click.echo(f"✅ Added to boilerplate ({target_type}): {file_path}")
+                    click.echo(f"✅ Added to template ({target_type}): {file_path}")
                 else:
                     click.echo(f"✅ Updated ({target_type}): {file_path}")
             except Exception as e:
@@ -361,7 +362,7 @@ def push(files_to_add: Optional[List[str]] = None) -> None:
     committed changes are copied back to the original template.
 
     Args:
-        files_to_add: Optional list of additional files to add to the boilerplate
+        files_to_add: Optional list of additional files to add to the template
 
     Raises:
         FileNotFoundError: If no .boilersync file is found
@@ -371,20 +372,26 @@ def push(files_to_add: Optional[List[str]] = None) -> None:
     root_dir = paths.root_dir
     boilersync_file = paths.boilersync_json_path
 
-    # Read the template name from .boilersync file
+    # Read the template metadata from .boilersync file
     try:
         with open(boilersync_file, "r", encoding="utf-8") as f:
             boilersync_data = json.load(f)
-        template_name = boilersync_data["template"]
+        template_source = resolve_source_from_boilersync(
+            boilersync_data.get("template"),
+            boilersync_data.get("source"),
+        )
+        template_ref = template_source.ref
+        template_dir = template_source.template_dir
+        template_repo_dir = template_source.local_repo_path or template_dir
         project_name = boilersync_data.get("name_snake")
         pretty_name = boilersync_data.get("name_pretty")
         collected_variables = boilersync_data.get("variables", {})
-    except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
+    except (FileNotFoundError, KeyError, ValueError, json.JSONDecodeError) as e:
         raise FileNotFoundError(
-            f"Could not read template name from {boilersync_file}: {e}"
+            f"Could not read template metadata from {boilersync_file}: {e}"
         ) from e
 
-    click.echo(f"🔍 Creating diff for template '{template_name}'...")
+    click.echo(f"🔍 Creating diff for template '{template_ref}'...")
 
     # Create a hash-based temporary directory name
     root_path_str = str(root_dir.resolve())
@@ -408,10 +415,9 @@ def push(files_to_add: Optional[List[str]] = None) -> None:
 
         # Copy template without interpolation first
         click.echo("📦 Copying fresh template without interpolation...")
-        template_dir = paths.boilerplate_dir / template_name
         if not template_dir.exists():
             raise FileNotFoundError(
-                f"Template '{template_name}' not found in {paths.boilerplate_dir}"
+                f"Template '{template_ref}' not found at {template_dir}"
             )
 
         copy_template_without_interpolation(template_dir, project_temp_dir)
@@ -422,7 +428,7 @@ def push(files_to_add: Optional[List[str]] = None) -> None:
             click.echo("🔧 Setting up git repository...")
             repo = Repo.init(project_temp_dir)
             repo.git.add(A=True)
-            repo.git.commit(m=f"Fresh template: {template_name}")
+            repo.git.commit(m=f"Fresh template: {template_ref}")
         else:
             raise Exception("Git repo already exists")
 
@@ -432,7 +438,7 @@ def push(files_to_add: Optional[List[str]] = None) -> None:
 
         # Copy any additional files specified by the user
         if files_to_add:
-            click.echo("📋 Copying additional files to add to boilerplate...")
+            click.echo("📋 Copying additional files to add to template...")
             copy_additional_files_to_temp(root_dir, project_temp_dir, files_to_add)
 
         # Reverse interpolate the copied project files
@@ -476,20 +482,20 @@ def push(files_to_add: Optional[List[str]] = None) -> None:
         # After user presses enter, copy changed files back to template
         click.echo("\n🔄 Processing committed changes to update template...")
         updated_files = copy_changed_files_to_template(
-            project_temp_dir, template_dir, template_name, files_to_add
+            project_temp_dir, template_dir, template_ref, files_to_add
         )
 
         if updated_files:
             click.echo(
-                f"\n✅ Successfully updated {len(updated_files)} file(s) in template '{template_name}':"
+                f"\n✅ Successfully updated {len(updated_files)} file(s) in template '{template_ref}':"
             )
             for file_path in updated_files:
                 click.echo(f"  • {file_path}")
             click.echo(f"\n📁 Template location: {template_dir}")
 
-            # Open the boilerplate directory in GitHub Desktop
-            click.echo("🚀 Opening boilerplate directory in GitHub Desktop...")
-            subprocess.run(["github", str(template_dir)], check=True)
+            # Open the template source repo in GitHub Desktop
+            click.echo("🚀 Opening template source repository in GitHub Desktop...")
+            subprocess.run(["github", str(template_repo_dir)], check=True)
         else:
             click.echo("\n📝 No files were updated in the template.")
 
@@ -527,15 +533,15 @@ def copy_project_files(source_dir: Path, target_dir: Path) -> None:
 @click.option(
     "--add-files",
     multiple=True,
-    help="Additional files to add to the boilerplate (can be used multiple times)",
+    help="Additional files to add to the template (can be used multiple times)",
 )
 def push_cmd(add_files):
-    """Show differences between current project and its template, then copy committed changes back to the boilerplate repo.
+    """Show differences between current project and its template, then copy committed changes back to the template repo.
 
     Creates a temporary directory with a fresh template initialization,
     then copies the current project files over it to show differences in GitHub Desktop.
     After reviewing the diff and committing desired changes, those committed changes
-    are copied back to the original template in the boilerplate repository.
+    are copied back to the original template source repository.
 
     Only committed changes will be copied back - make sure to commit any changes
     you want to push to the template before pressing Enter.

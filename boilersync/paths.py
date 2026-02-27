@@ -23,6 +23,11 @@ class Paths:
             return Path(env_path).expanduser()
         return Path.home() / ".boilersync" / "templates"
 
+    @property
+    def template_root_dir(self) -> Path:
+        """Backward-compatible alias for older callers."""
+        return self.boilerplate_dir
+
     def find_parent_boilersync(
         self, start_dir: Optional[Path] = None
     ) -> Optional[Path]:

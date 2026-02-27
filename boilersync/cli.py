@@ -25,7 +25,7 @@ def print_version(ctx, param, value):
     help="Show the version and exit.",
 )
 def main():
-    """BoilerSync - a boilerplate CLI tool that can not only generate projects from boilerplate templates, but keep the boilerplate "alive" and updated as you continue to develop the derivative projects."""
+    """BoilerSync - a template CLI that generates projects and keeps templates updated as derived projects evolve."""
     pass
 
 

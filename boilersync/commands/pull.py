@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Set
+from typing import Any
 
 import click
 from git import InvalidGitRepositoryError, Repo
@@ -10,6 +10,12 @@ from git import InvalidGitRepositoryError, Repo
 from boilersync.interpolation_context import interpolation_context
 from boilersync.names import normalize_to_snake, snake_to_pretty
 from boilersync.paths import paths
+from boilersync.template_sources import (
+    TemplateSource,
+    build_source_backlink,
+    resolve_source_from_boilersync,
+    resolve_template_source,
+)
 from boilersync.template_processor import (
     process_template_directory,
 )
@@ -54,7 +60,7 @@ def is_starter_file(file_path: Path) -> bool:
     return False
 
 
-def scan_template_for_variables_excluding_starter(source_dir: Path) -> Set[str]:
+def scan_template_for_variables_excluding_starter(source_dir: Path) -> set[str]:
     """Scan template directory for variables, excluding starter files.
 
     Args:
@@ -254,16 +260,16 @@ def get_parent_template(template_dir: Path) -> str | None:
 
 
 def get_template_inheritance_chain(
-    template_name: str, visited: Set[str] | None = None
-) -> list[str]:
+    template_ref: str, visited: set[str] | None = None
+) -> list[TemplateSource]:
     """Get the full inheritance chain for a template, from root parent to child.
 
     Args:
-        template_name: The template to get the inheritance chain for
+        template_ref: The template ref to get the inheritance chain for
         visited: Set of already visited templates to detect circular dependencies
 
     Returns:
-        List of template names in order from root parent to the given template
+        List of resolved template sources in order from root parent to child
 
     Raises:
         ValueError: If a circular dependency is detected
@@ -272,30 +278,25 @@ def get_template_inheritance_chain(
     if visited is None:
         visited = set()
 
-    if template_name in visited:
+    source = resolve_template_source(template_ref)
+    if source.identifier in visited:
         raise ValueError(
-            f"Circular dependency detected in template inheritance: {template_name}"
+            f"Circular dependency detected in template inheritance: {template_ref}"
         )
 
-    visited.add(template_name)
+    visited.add(source.identifier)
 
-    template_dir = paths.boilerplate_dir / template_name
-    if not template_dir.exists():
-        raise FileNotFoundError(
-            f"Template '{template_name}' not found in {paths.boilerplate_dir}"
-        )
-
-    parent_name = get_parent_template(template_dir)
-    if parent_name is None:
+    parent_ref = get_parent_template(source.template_dir)
+    if parent_ref is None:
         # This is the root template
-        return [template_name]
+        return [source]
 
     # Recursively get parent chain and append this template
-    parent_chain = get_template_inheritance_chain(parent_name, visited.copy())
-    return parent_chain + [template_name]
+    parent_chain = get_template_inheritance_chain(parent_ref, visited.copy())
+    return parent_chain + [source]
 
 
-def should_skip_git(inheritance_chain: list[str]) -> bool:
+def should_skip_git(inheritance_chain: list[TemplateSource]) -> bool:
     """Check if any template in the inheritance chain has skip_git: true.
 
     Args:
@@ -304,16 +305,15 @@ def should_skip_git(inheritance_chain: list[str]) -> bool:
     Returns:
         True if any template has skip_git: true, False otherwise
     """
-    for template_name in inheritance_chain:
-        template_dir = paths.boilerplate_dir / template_name
-        config = get_template_config(template_dir)
+    for template_source in inheritance_chain:
+        config = get_template_config(template_source.template_dir)
         if config.get("skip_git", False):
             return True
     return False
 
 
 def pull(
-    template_name: str | None = None,
+    template_ref: str | None = None,
     *,
     project_name: str | None = None,
     pretty_name: str | None = None,
@@ -324,10 +324,10 @@ def pull(
     target_dir: Path | None = None,
     _recursive: bool = True,
 ) -> None:
-    """Pull template/boilerplate changes to the current project.
+    """Pull template changes to the current project.
 
     Args:
-        template_name: Name of the template to use from the boilerplate directory (auto-detected if None)
+        template_ref: Template reference (auto-detected if None)
         project_name: Optional predefined project name (snake_case)
         pretty_name: Optional predefined pretty name
         collected_variables: Optional pre-collected variables to restore
@@ -343,13 +343,17 @@ def pull(
     """
     target_dir = target_dir or Path.cwd()
 
-    # Auto-detect template name from .boilersync file if not provided
-    if template_name is None:
+    # Auto-detect template source from .boilersync file if not provided
+    if template_ref is None:
         try:
             boilersync_file = paths.boilersync_json_path
             with open(boilersync_file, "r", encoding="utf-8") as f:
                 boilersync_data = json.load(f)
-            template_name = boilersync_data["template"]
+            template_source = resolve_source_from_boilersync(
+                boilersync_data.get("template"),
+                boilersync_data.get("source"),
+            )
+            template_ref = template_source.ref
             # Also get the saved project details
             if project_name is None:
                 project_name = boilersync_data.get("name_snake")
@@ -358,34 +362,29 @@ def pull(
             if collected_variables is None:
                 collected_variables = boilersync_data.get("variables", {})
             logger.info(
-                f"📋 Auto-detected template '{template_name}' from .boilersync file"
+                f"📋 Auto-detected template '{template_ref}' from .boilersync file"
             )
-        except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
+        except (FileNotFoundError, KeyError, ValueError, json.JSONDecodeError) as e:
             raise FileNotFoundError(
-                f"Could not auto-detect template name from .boilersync file: {e}. "
-                f"Please specify template name explicitly or run from a directory with .boilersync file."
+                f"Could not auto-detect template reference from .boilersync file: {e}. "
+                "Please specify a template ref explicitly or run from a directory with .boilersync file."
             ) from e
 
-    # At this point template_name should not be None
-    assert template_name is not None, "Template name should be set by now"
+    # At this point template_ref should not be None
+    assert template_ref is not None, "Template ref should be set by now"
 
     # Get the full inheritance chain for the template
     try:
-        inheritance_chain = get_template_inheritance_chain(template_name)
+        inheritance_chain = get_template_inheritance_chain(template_ref)
         if len(inheritance_chain) > 1:
             logger.info(
-                f"🔗 Template inheritance chain: {' → '.join(inheritance_chain)}"
+                "🔗 Template inheritance chain: "
+                + " → ".join(item.ref for item in inheritance_chain)
             )
     except ValueError as e:
         raise ValueError(f"Template inheritance error: {e}") from e
 
-    # Verify all templates in the chain exist
-    for tmpl_name in inheritance_chain:
-        template_dir = paths.boilerplate_dir / tmpl_name
-        if not template_dir.exists():
-            raise FileNotFoundError(
-                f"Template '{tmpl_name}' not found in {paths.boilerplate_dir}"
-            )
+    leaf_template_ref = inheritance_chain[-1].ref
 
     # Check if directory has any files besides .DS_Store
     has_files = any(p for p in target_dir.iterdir() if p.name != ".DS_Store")
@@ -409,7 +408,7 @@ def pull(
         final_pretty_name = (
             pretty_name if pretty_name is not None else snake_to_pretty(project_name)
         )
-        logger.info(f"\n🚀 Pulling from template '{template_name}'")
+        logger.info(f"\n🚀 Pulling from template '{leaf_template_ref}'")
         logger.info(f"📝 Using project name: {snake_name}")
         logger.info(f"📝 Using pretty name: {final_pretty_name}")
     else:
@@ -423,7 +422,7 @@ def pull(
         )
 
         # Prompt user for project names
-        logger.info(f"\n🚀 Pulling from template '{template_name}'")
+        logger.info(f"\n🚀 Pulling from template '{leaf_template_ref}'")
         logger.info("=" * 50)
 
         snake_name = prompt_or_default(
@@ -450,16 +449,18 @@ def pull(
         interpolation_context.set_collected_variables(collected_variables)
 
     # Process each template in the inheritance chain
-    for i, tmpl_name in enumerate(inheritance_chain):
-        template_dir = paths.boilerplate_dir / tmpl_name
+    for i, template_source in enumerate(inheritance_chain):
+        template_dir = template_source.template_dir
 
         if len(inheritance_chain) > 1:
             if i == 0:
-                logger.info(f"\n📦 Processing parent template '{tmpl_name}'...")
+                logger.info(f"\n📦 Processing parent template '{template_source.ref}'...")
             elif i == len(inheritance_chain) - 1:
-                logger.info(f"\n📦 Processing child template '{tmpl_name}'...")
+                logger.info(f"\n📦 Processing child template '{template_source.ref}'...")
             else:
-                logger.info(f"\n📦 Processing intermediate template '{tmpl_name}'...")
+                logger.info(
+                    f"\n📦 Processing intermediate template '{template_source.ref}'..."
+                )
 
         # Process the template directory with interpolation
         if include_starter:
@@ -474,25 +475,29 @@ def pull(
     # Get all collected variables to save them
     collected_variables = interpolation_context.get_collected_variables()
 
-    # Create .boilersync file to track the template (save the final child template name)
+    # Create .boilersync file to track template origin.
     boilersync_file = target_dir / ".boilersync"
+    leaf_source = inheritance_chain[-1]
     boilersync_data = {
-        "template": template_name,
+        "template": leaf_source.ref,
         "name_snake": snake_name,
         "name_pretty": final_pretty_name,
         "variables": collected_variables,
     }
+    source_backlink = build_source_backlink(leaf_source)
+    if source_backlink is not None:
+        boilersync_data["source"] = source_backlink
 
     with open(boilersync_file, "w", encoding="utf-8") as f:
         json.dump(boilersync_data, f, indent=2)
 
     if has_files and allow_non_empty:
         logger.info(
-            f"\n✅ Template '{template_name}' pulled successfully into existing project!"
+            f"\n✅ Template '{leaf_template_ref}' pulled successfully into existing project!"
         )
     else:
         logger.info(
-            f"\n✅ Project initialized successfully from template '{template_name}'!"
+            f"\n✅ Project initialized successfully from template '{leaf_template_ref}'!"
         )
     logger.info("📁 Created .boilersync file to track template origin")
 
@@ -504,7 +509,7 @@ def pull(
             logger.info("\n🔧 Initializing git repository...")
             repo = Repo.init(target_dir)
             repo.git.add(".")
-            repo.index.commit(f"Initial commit from template '{template_name}'")
+            repo.index.commit(f"Initial commit from template '{leaf_template_ref}'")
             logger.info("✅ Git repository initialized and all changes committed")
 
     # Pull updates for child projects if recursive is enabled
@@ -513,17 +518,20 @@ def pull(
 
 
 @click.command(name="pull")
-@click.argument("template_name", required=False)
+@click.argument("template_ref", required=False)
 @click.option(
     "--include-starter",
     is_flag=True,
     help="Include starter files when pulling template changes",
 )
 @click.option("--no-children", is_flag=True, help="Skip updating child projects")
-def pull_cmd(template_name: str | None, include_starter: bool, no_children: bool):
-    """Pull template/boilerplate changes to the current project.
+def pull_cmd(template_ref: str | None, include_starter: bool, no_children: bool):
+    """Pull template changes to the current project.
 
-    TEMPLATE_NAME is the name of the template directory in the boilerplate directory.
+    TEMPLATE_REF is either:
+    - A legacy template name in the local template cache
+    - A source-qualified ref: ORG/REPO#SUBDIR (or URL#SUBDIR)
+
     If not provided, will auto-detect from the nearest .boilersync file.
     Can be used in non-empty directories if the git repository is clean.
 
@@ -538,7 +546,7 @@ def pull_cmd(template_name: str | None, include_starter: bool, no_children: bool
     listed in the .boilersync file. Use --no-children to skip child updates.
     """
     pull(
-        template_name,
+        template_ref,
         allow_non_empty=True,
         include_starter=include_starter,
         _recursive=not no_children,

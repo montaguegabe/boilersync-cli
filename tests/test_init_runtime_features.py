@@ -13,16 +13,17 @@ from boilersync.commands.init import (
     _merge_runtime_config,
     init,
 )
+from boilersync.commands.pull import get_template_inheritance_chain
 
 
 def _write_template(
-    boilerplate_dir: Path,
+    template_root_dir: Path,
     template_name: str,
     *,
     files: dict[str, str],
     config: dict[str, object] | None = None,
 ) -> None:
-    template_dir = boilerplate_dir / template_name
+    template_dir = template_root_dir / template_name
     template_dir.mkdir(parents=True, exist_ok=True)
 
     if config is not None:
@@ -38,11 +39,11 @@ class TestInitRuntimeFeatures(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
-        self.boilerplate_dir = self.root / "boilerplate"
-        self.boilerplate_dir.mkdir()
+        self.template_root_dir = self.root / "templates"
+        self.template_root_dir.mkdir()
         self.env_patcher = patch.dict(
             os.environ,
-            {"BOILERSYNC_TEMPLATE_DIR": str(self.boilerplate_dir)},
+            {"BOILERSYNC_TEMPLATE_DIR": str(self.template_root_dir)},
             clear=False,
         )
         self.env_patcher.start()
@@ -53,7 +54,7 @@ class TestInitRuntimeFeatures(unittest.TestCase):
 
     def test_merge_runtime_config_inheritance(self) -> None:
         _write_template(
-            self.boilerplate_dir,
+            self.template_root_dir,
             "parent-template",
             files={"README.md": "parent"},
             config={
@@ -63,7 +64,7 @@ class TestInitRuntimeFeatures(unittest.TestCase):
             },
         )
         _write_template(
-            self.boilerplate_dir,
+            self.template_root_dir,
             "child-template",
             files={"README.md": "child"},
             config={
@@ -73,7 +74,7 @@ class TestInitRuntimeFeatures(unittest.TestCase):
             },
         )
 
-        merged = _merge_runtime_config(["parent-template", "child-template"])
+        merged = _merge_runtime_config(get_template_inheritance_chain("child-template"))
         self.assertEqual(len(merged["children"]), 1)
         self.assertEqual(
             [hook["id"] for hook in merged["hooks"]["post_init"]],
@@ -87,7 +88,7 @@ class TestInitRuntimeFeatures(unittest.TestCase):
         target_dir.mkdir()
 
         _write_template(
-            self.boilerplate_dir,
+            self.template_root_dir,
             "workspace-template",
             files={"README.md.boilersync": "Workspace $${name_snake}\n"},
             config={
@@ -112,7 +113,7 @@ class TestInitRuntimeFeatures(unittest.TestCase):
             },
         )
         _write_template(
-            self.boilerplate_dir,
+            self.template_root_dir,
             "child-template",
             files={"child.txt.boilersync": "$${child_message}\n"},
             config={"skip_git": True},
