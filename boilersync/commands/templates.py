@@ -244,7 +244,7 @@ def init_templates(
     repo_url_option: str | None = None,
     no_input: bool = False,
 ) -> None:
-    """Initialize local template sources by cloning a repository."""
+    """Initialize local template sources by cloning a GitHub repository."""
     if repo_url and repo_url_option:
         raise click.UsageError(
             "Provide either REPO_URL argument or --repo-url, not both."
@@ -257,7 +257,7 @@ def init_templates(
                 "Template repository URL is required when --no-input is used."
             )
         final_repo_url = click.prompt(
-            "Template repository URL to clone into local template cache",
+            "GitHub repository URL to clone into local template cache",
             type=str,
         ).strip()
         if not final_repo_url:
@@ -292,7 +292,7 @@ def init_templates(
 @click.option(
     "--repo-url",
     "repo_url_option",
-    help="Template repository URL to clone.",
+    help="GitHub repository URL to clone.",
 )
 @click.option("--no-input", is_flag=True, help="Do not prompt for input.")
 def templates_init_cmd(
@@ -300,7 +300,7 @@ def templates_init_cmd(
     repo_url_option: str | None,
     no_input: bool,
 ) -> None:
-    """Clone a template source repository into the configured template cache.
+    """Clone a template source GitHub repository into the configured template cache.
 
     REPO_URL is optional. If omitted, Boilersync will prompt for it.
     """

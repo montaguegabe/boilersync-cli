@@ -13,8 +13,8 @@ class TestTemplatesInit(unittest.TestCase):
     def test_raises_when_repo_arg_and_option_are_both_provided(self):
         with self.assertRaises(click.UsageError):
             init_templates(
-                repo_url="https://example.com/from-arg.git",
-                repo_url_option="https://example.com/from-option.git",
+                repo_url="https://github.com/acme/from-arg.git",
+                repo_url_option="https://github.com/acme/from-option.git",
             )
 
     def test_raises_when_no_url_and_no_input(self):
@@ -24,7 +24,6 @@ class TestTemplatesInit(unittest.TestCase):
     def test_prompts_for_url_when_not_supplied(self):
         with tempfile.TemporaryDirectory() as tmp:
             template_root_dir = Path(tmp) / "templates"
-            target_dir = template_root_dir / "acme" / "templates"
             with patch.dict(
                 os.environ,
                 {"BOILERSYNC_TEMPLATE_DIR": str(template_root_dir)},
@@ -32,7 +31,7 @@ class TestTemplatesInit(unittest.TestCase):
             ):
                 with patch(
                     "boilersync.commands.templates.click.prompt",
-                    return_value="https://example.com/acme/templates.git",
+                    return_value="https://github.com/acme/templates.git",
                 ) as mock_prompt:
                     with patch("boilersync.commands.templates.subprocess.run") as mock_run:
                         init_templates(repo_url=None, repo_url_option=None, no_input=False)
@@ -42,7 +41,7 @@ class TestTemplatesInit(unittest.TestCase):
                     [
                         "git",
                         "clone",
-                        "https://example.com/acme/templates.git",
+                        "https://github.com/acme/templates.git",
                         str(template_root_dir / "acme" / "templates"),
                     ],
                     check=True,
@@ -58,14 +57,14 @@ class TestTemplatesInit(unittest.TestCase):
                 clear=True,
             ):
                 with patch("boilersync.commands.templates.subprocess.run") as mock_run:
-                    init_templates(repo_url="https://example.com/acme/templates.git")
+                    init_templates(repo_url="https://github.com/acme/templates.git")
 
             self.assertTrue(target_dir.parent.exists())
             mock_run.assert_called_once_with(
                 [
                     "git",
                     "clone",
-                    "https://example.com/acme/templates.git",
+                    "https://github.com/acme/templates.git",
                     str(target_dir),
                 ],
                 check=True,
@@ -82,7 +81,7 @@ class TestTemplatesInit(unittest.TestCase):
                 clear=True,
             ):
                 with patch("boilersync.commands.templates.subprocess.run") as mock_run:
-                    init_templates(repo_url="https://example.com/acme/templates.git")
+                    init_templates(repo_url="https://github.com/acme/templates.git")
 
             mock_run.assert_not_called()
 
@@ -107,6 +106,10 @@ class TestTemplatesInit(unittest.TestCase):
                 ],
                 check=True,
             )
+
+    def test_rejects_non_github_repo_url(self):
+        with self.assertRaises(click.ClickException):
+            init_templates(repo_url="https://example.com/acme/templates.git")
 
 
 if __name__ == "__main__":

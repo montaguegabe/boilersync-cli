@@ -1,0 +1,62 @@
+# Project Metadata (`.boilersync`)
+
+BoilerSync writes a `.boilersync` file in the project root after `boilersync init` and `boilersync pull`.
+
+This file is the source of truth for template provenance and saved interpolation inputs.
+
+## Schema
+
+```json
+{
+  "template": "https://github.com/acme/templates.git#python/service-template",
+  "name_snake": "my_service",
+  "name_pretty": "My Service",
+  "variables": {
+    "description": "Example service"
+  },
+  "children": ["my-service-worker"]
+}
+```
+
+## Field-By-Field Reference
+
+### `template` (required)
+
+- Type: `string`
+- Format: `https://github.com/<org>/<repo>(.git optional)#<template_subdir>`
+- Notes:
+  - GitHub host is required.
+  - `<template_subdir>` is required and cannot be empty.
+  - BoilerSync canonicalizes this value to include `.git` when writing the file.
+  - The source repository is resolved/cloned at:
+    - `${BOILERSYNC_TEMPLATE_DIR:-~/.boilersync/templates}/<org>/<repo>`
+
+### `name_snake` (required)
+
+- Type: `string`
+- Purpose: project identifier used for interpolation (`$${name_snake}`).
+
+### `name_pretty` (required)
+
+- Type: `string`
+- Purpose: display name used for interpolation (`$${name_pretty}`).
+
+### `variables` (required)
+
+- Type: `object`
+- Purpose: saved interpolation variables for repeatable `pull` and `push` flows.
+- Notes: keys/values are template-specific.
+
+### `children` (optional)
+
+- Type: `string[]`
+- Purpose: relative paths to child projects for recursive pull behavior.
+- Notes:
+  - Paths are relative to the directory containing `.boilersync`.
+  - Field is present when child projects are registered.
+
+## Validation Rules
+
+- Missing or invalid `template` fails `.boilersync` resolution.
+- Legacy metadata shapes are not supported.
+- Unknown extra keys are ignored by current commands.

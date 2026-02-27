@@ -10,10 +10,8 @@ import click
 from git import Repo
 
 from boilersync.paths import paths
+from boilersync.template_processor import process_file_extensions
 from boilersync.template_sources import resolve_source_from_boilersync
-from boilersync.template_processor import (
-    process_file_extensions,
-)
 
 
 def copy_template_without_interpolation(template_dir: Path, target_dir: Path) -> None:
@@ -378,11 +376,10 @@ def push(files_to_add: Optional[List[str]] = None) -> None:
             boilersync_data = json.load(f)
         template_source = resolve_source_from_boilersync(
             boilersync_data.get("template"),
-            boilersync_data.get("source"),
         )
-        template_ref = template_source.ref
+        template_ref = template_source.canonical_ref
         template_dir = template_source.template_dir
-        template_repo_dir = template_source.local_repo_path or template_dir
+        template_repo_dir = template_source.local_repo_path
         project_name = boilersync_data.get("name_snake")
         pretty_name = boilersync_data.get("name_pretty")
         collected_variables = boilersync_data.get("variables", {})

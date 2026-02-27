@@ -10,14 +10,11 @@ from git import InvalidGitRepositoryError, Repo
 from boilersync.interpolation_context import interpolation_context
 from boilersync.names import normalize_to_snake, snake_to_pretty
 from boilersync.paths import paths
+from boilersync.template_processor import process_template_directory
 from boilersync.template_sources import (
     TemplateSource,
-    build_source_backlink,
     resolve_source_from_boilersync,
     resolve_template_source,
-)
-from boilersync.template_processor import (
-    process_template_directory,
 )
 from boilersync.utils import prompt_or_default
 from boilersync.variable_collector import collect_missing_variables
@@ -351,9 +348,8 @@ def pull(
                 boilersync_data = json.load(f)
             template_source = resolve_source_from_boilersync(
                 boilersync_data.get("template"),
-                boilersync_data.get("source"),
             )
-            template_ref = template_source.ref
+            template_ref = template_source.canonical_ref
             # Also get the saved project details
             if project_name is None:
                 project_name = boilersync_data.get("name_snake")
@@ -479,14 +475,11 @@ def pull(
     boilersync_file = target_dir / ".boilersync"
     leaf_source = inheritance_chain[-1]
     boilersync_data = {
-        "template": leaf_source.ref,
+        "template": leaf_source.canonical_ref,
         "name_snake": snake_name,
         "name_pretty": final_pretty_name,
         "variables": collected_variables,
     }
-    source_backlink = build_source_backlink(leaf_source)
-    if source_backlink is not None:
-        boilersync_data["source"] = source_backlink
 
     with open(boilersync_file, "w", encoding="utf-8") as f:
         json.dump(boilersync_data, f, indent=2)
@@ -529,8 +522,8 @@ def pull_cmd(template_ref: str | None, include_starter: bool, no_children: bool)
     """Pull template changes to the current project.
 
     TEMPLATE_REF is either:
-    - A legacy template name in the local template cache
-    - A source-qualified ref: ORG/REPO#SUBDIR (or URL#SUBDIR)
+    - A source-qualified ref: ORG/REPO#SUBDIR
+    - A GitHub URL ref: https://github.com/ORG/REPO.git#SUBDIR
 
     If not provided, will auto-detect from the nearest .boilersync file.
     Can be used in non-empty directories if the git repository is clean.

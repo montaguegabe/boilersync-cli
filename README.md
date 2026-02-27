@@ -50,11 +50,11 @@ boilersync templates --help
 
 Template commands accept:
 
-- Legacy local template names (deprecated): `my-template`
-- Source-qualified refs (recommended):
-  - `org/repo#path/to/template`
-  - `https://host/org/repo.git#path/to/template`
-  - `git@host:org/repo.git#path/to/template`
+- `org/repo#path/to/template`
+- `https://github.com/org/repo#path/to/template`
+- `https://github.com/org/repo.git#path/to/template`
+
+GitHub is the only supported host for source-qualified template refs.
 
 Source-qualified refs clone (if missing) into:
 
@@ -65,6 +65,7 @@ ${BOILERSYNC_TEMPLATE_DIR:-~/.boilersync/templates}/<org>/<repo>
 ## Project Tracking
 
 After scaffold or pull, BoilerSync writes `.boilersync` metadata in the project root so future `pull`/`push` operations can resolve the original template source.
+For the field-by-field schema and validation rules, see [docs/project-metadata.md](docs/project-metadata.md).
 
 ## Template Conventions
 

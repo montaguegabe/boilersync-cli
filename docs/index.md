@@ -4,6 +4,7 @@
 
 - [Ensemble Guide](ensemble.md)
 - [Template Metadata Reference](template-metadata.md)
+- [Project Metadata (`.boilersync`)](project-metadata.md)
 
 For command-level usage:
 

@@ -468,15 +468,15 @@ def init_cmd(
     """Initialize a new project from a template (empty directory only).
 
     TEMPLATE_REF is either:
-    - A legacy template name in the local template cache
-    - A source-qualified ref: ORG/REPO#SUBDIR (or URL#SUBDIR)
+    - A source-qualified ref: ORG/REPO#SUBDIR
+    - A GitHub URL ref: https://github.com/ORG/REPO.git#SUBDIR
 
     This command only works in empty directories.
 
     For non-interactive usage, provide --name and any required template variables:
 
     \b
-      boilersync init my-template --name my_project --var author_name="John Doe"
+      boilersync init your-org/your-templates#service --name my_project --var author_name="John Doe"
     """
     init(
         template_ref,

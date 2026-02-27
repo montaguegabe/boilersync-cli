@@ -41,9 +41,8 @@ boilersync push
 ### Template Reference Formats
 
 - `org/repo#subdir`
-- `https://host/org/repo.git#subdir`
-- `git@host:org/repo.git#subdir`
-- Legacy local name (deprecated)
+- `https://github.com/org/repo#subdir`
+- `https://github.com/org/repo.git#subdir`
 
 Template cache root defaults to:
 
@@ -58,6 +57,7 @@ BOILERSYNC_TEMPLATE_DIR=/custom/path
 ```
 
 BoilerSync writes `.boilersync` metadata in project roots after scaffold/pull so future sync operations can resolve template provenance.
+For the exact schema, see [project-metadata.md](project-metadata.md).
 
 ## CLI Commands
 
@@ -67,7 +67,7 @@ Use for first-time project generation.
 
 - Requires an empty target directory
 - Supports `--name`, `--pretty-name`, `--var KEY=VALUE`, and `--no-input`
-- Resolves source-qualified refs and legacy cache refs
+- Resolves source-qualified refs
 - Can run configured hooks and initialize child templates
 
 ### `boilersync pull [TEMPLATE_REF]`
@@ -92,7 +92,7 @@ Use to promote committed project improvements back to template source.
 Use to initialize the local template source cache.
 
 - Clones template source repositories into the BoilerSync template root
-- Supports org/repo shorthand and full git URLs
+- Supports org/repo shorthand and GitHub HTTPS URLs
 - Supports non-interactive mode (`--no-input`)
 
 ## Desktop App Workflow (`boilersync-desktop`)

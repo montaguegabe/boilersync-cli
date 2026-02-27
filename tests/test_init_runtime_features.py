@@ -18,12 +18,16 @@ from boilersync.commands.pull import get_template_inheritance_chain
 
 def _write_template(
     template_root_dir: Path,
-    template_name: str,
     *,
+    org: str,
+    repo: str,
+    subdir: str,
     files: dict[str, str],
     config: dict[str, object] | None = None,
 ) -> None:
-    template_dir = template_root_dir / template_name
+    repo_dir = template_root_dir / org / repo
+    template_dir = repo_dir / subdir
+    (repo_dir / ".git").mkdir(parents=True, exist_ok=True)
     template_dir.mkdir(parents=True, exist_ok=True)
 
     if config is not None:
@@ -41,12 +45,20 @@ class TestInitRuntimeFeatures(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         self.template_root_dir = self.root / "templates"
         self.template_root_dir.mkdir()
+        self.org = "acme"
+        self.repo = "templates"
         self.env_patcher = patch.dict(
             os.environ,
             {"BOILERSYNC_TEMPLATE_DIR": str(self.template_root_dir)},
             clear=False,
         )
         self.env_patcher.start()
+
+    def _template_ref(self, subdir: str) -> str:
+        return f"{self.org}/{self.repo}#{subdir}"
+
+    def _canonical_template_ref(self, subdir: str) -> str:
+        return f"https://github.com/{self.org}/{self.repo}.git#{subdir}"
 
     def tearDown(self) -> None:
         self.env_patcher.stop()
@@ -55,26 +67,34 @@ class TestInitRuntimeFeatures(unittest.TestCase):
     def test_merge_runtime_config_inheritance(self) -> None:
         _write_template(
             self.template_root_dir,
-            "parent-template",
+            org=self.org,
+            repo=self.repo,
+            subdir="parent-template",
             files={"README.md": "parent"},
             config={
                 "hooks": {"post_init": [{"id": "parent_hook", "run": "echo parent"}]},
                 "github": {"create_repo": True, "private": True},
-                "children": [{"template": "child-template", "path": "child-dir"}],
+                "children": [
+                    {"template": self._template_ref("child-template"), "path": "child-dir"}
+                ],
             },
         )
         _write_template(
             self.template_root_dir,
-            "child-template",
+            org=self.org,
+            repo=self.repo,
+            subdir="child-template",
             files={"README.md": "child"},
             config={
-                "extends": "parent-template",
+                "extends": self._template_ref("parent-template"),
                 "hooks": {"post_init": [{"id": "child_hook", "run": "echo child"}]},
                 "github": {"private": False},
             },
         )
 
-        merged = _merge_runtime_config(get_template_inheritance_chain("child-template"))
+        merged = _merge_runtime_config(
+            get_template_inheritance_chain(self._template_ref("child-template"))
+        )
         self.assertEqual(len(merged["children"]), 1)
         self.assertEqual(
             [hook["id"] for hook in merged["hooks"]["post_init"]],
@@ -89,12 +109,14 @@ class TestInitRuntimeFeatures(unittest.TestCase):
 
         _write_template(
             self.template_root_dir,
-            "workspace-template",
+            org=self.org,
+            repo=self.repo,
+            subdir="workspace-template",
             files={"README.md.boilersync": "Workspace $${name_snake}\n"},
             config={
                 "children": [
                     {
-                        "template": "child-template",
+                        "template": self._template_ref("child-template"),
                         "path": "$${name_kebab}-child",
                         "condition": "with_frontend",
                         "variables": {"child_message": "$${workspace_message}"},
@@ -114,13 +136,15 @@ class TestInitRuntimeFeatures(unittest.TestCase):
         )
         _write_template(
             self.template_root_dir,
-            "child-template",
+            org=self.org,
+            repo=self.repo,
+            subdir="child-template",
             files={"child.txt.boilersync": "$${child_message}\n"},
             config={"skip_git": True},
         )
 
         init(
-            "workspace-template",
+            self._template_ref("workspace-template"),
             target_dir=target_dir,
             project_name="demo_workspace",
             no_input=True,
@@ -141,6 +165,11 @@ class TestInitRuntimeFeatures(unittest.TestCase):
         )
 
         root_boilersync_data = json.loads((target_dir / ".boilersync").read_text())
+        self.assertEqual(
+            root_boilersync_data["template"],
+            self._canonical_template_ref("workspace-template"),
+        )
+        self.assertNotIn("source", root_boilersync_data)
         self.assertEqual(root_boilersync_data["children"], ["demo-workspace-child"])
 
     @patch("boilersync.commands.init.subprocess.run")

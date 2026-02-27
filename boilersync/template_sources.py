@@ -1,35 +1,33 @@
-import logging
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 from urllib.parse import urlparse
 
 from boilersync.paths import paths
 
-logger = logging.getLogger(__name__)
-
 SOURCE_RESOLUTION = "source_ref"
-LEGACY_RESOLUTION = "legacy_name"
 
 
 @dataclass(frozen=True)
 class TemplateSource:
     ref: str
-    resolution: Literal["source_ref", "legacy_name"]
+    resolution: Literal["source_ref"]
     template_dir: Path
-    repo_url: str | None = None
-    org: str | None = None
-    repo: str | None = None
-    subdir: str | None = None
-    local_repo_path: Path | None = None
+    repo_url: str
+    org: str
+    repo: str
+    subdir: str
+    local_repo_path: Path
 
     @property
     def identifier(self) -> str:
-        if self.resolution == SOURCE_RESOLUTION:
-            return f"source:{self.org}/{self.repo}#{self.subdir}"
-        return f"legacy:{self.ref}"
+        return f"source:{self.org}/{self.repo}#{self.subdir}"
+
+    @property
+    def canonical_ref(self) -> str:
+        return f"{self.repo_url}#{self.subdir}"
 
 
 def _normalize_subdir(subdir: str) -> str:
@@ -46,49 +44,51 @@ def parse_repo_locator(repo_locator: str) -> tuple[str, str, str]:
     if not locator:
         raise ValueError("Template source repo cannot be empty.")
 
+    if locator.startswith("git@"):
+        raise ValueError(
+            "SSH template refs are not supported. Use a GitHub HTTPS URL."
+        )
+
     if "://" in locator:
         parsed = urlparse(locator)
-        if not parsed.scheme or not parsed.netloc:
+        if parsed.scheme != "https":
             raise ValueError(f"Invalid template source repo URL: {repo_locator}")
+        if parsed.netloc not in {"github.com", "www.github.com"}:
+            raise ValueError(
+                "Template source repo URL must be hosted on github.com."
+            )
         path = parsed.path.strip("/")
         if path.endswith(".git"):
             path = path[: -len(".git")]
         parts = [part for part in path.split("/") if part]
-        if len(parts) < 2:
+        if len(parts) != 2:
             raise ValueError(
-                "Template source repo URL must include org/repo path segments."
+                "Template source repo URL must be in the format https://github.com/org/repo(.git)."
             )
-        org = parts[-2]
-        repo = parts[-1]
-        clone_url = locator
+        org = parts[0]
+        repo = parts[1]
+        clone_url = f"https://github.com/{org}/{repo}.git"
         return org, repo, clone_url
-
-    if locator.startswith("git@"):
-        match = re.match(r"^git@[^:]+:(?P<org>[^/]+)/(?P<repo>[^/]+)$", locator)
-        if not match:
-            raise ValueError(f"Invalid SSH repo format: {repo_locator}")
-        org = match.group("org")
-        repo = match.group("repo")
-        if repo.endswith(".git"):
-            repo = repo[: -len(".git")]
-        return org, repo, locator
 
     match = re.match(r"^(?P<org>[^/\s]+)/(?P<repo>[^/\s]+)$", locator)
     if match:
         org = match.group("org")
         repo = match.group("repo")
+        if repo.endswith(".git"):
+            repo = repo[: -len(".git")]
         clone_url = f"https://github.com/{org}/{repo}.git"
         return org, repo, clone_url
 
     raise ValueError(
-        "Invalid template source repo. Use org/repo, HTTPS URL, or SSH URL."
+        "Invalid template source repo. Use org/repo or https://github.com/org/repo(.git)."
     )
 
 
-def _parse_source_ref(template_ref: str) -> tuple[str, str] | None:
+def _parse_source_ref(template_ref: str) -> tuple[str, str]:
     if "#" not in template_ref:
-        return None
-
+        raise ValueError(
+            "Template source ref must be in the format https://github.com/org/repo.git#subdir."
+        )
     repo_locator, subdir = template_ref.split("#", 1)
     repo_locator = repo_locator.strip()
     if not repo_locator:
@@ -112,69 +112,12 @@ def _ensure_repo_cloned(repo_url: str, repo_path: Path) -> None:
     subprocess.run(["git", "clone", repo_url, str(repo_path)], check=True)
 
 
-def _resolve_legacy_template_dir(template_ref: str) -> Path:
-    template_root_dir = paths.template_root_dir
-    if not template_root_dir.exists():
-        raise FileNotFoundError(
-            f"Template root directory does not exist: {template_root_dir}"
-        )
-
-    direct_dir = template_root_dir / template_ref
-    if direct_dir.exists():
-        return direct_dir
-
-    candidates: list[Path] = []
-    for org_dir in sorted(template_root_dir.iterdir()):
-        if not org_dir.is_dir():
-            continue
-        for repo_dir in sorted(org_dir.iterdir()):
-            if not repo_dir.is_dir():
-                continue
-            candidate = repo_dir / template_ref
-            if candidate.exists():
-                candidates.append(candidate)
-
-    if len(candidates) == 1:
-        logger.warning(
-            "Resolved legacy template ref '%s' to nested template path %s",
-            template_ref,
-            candidates[0],
-        )
-        return candidates[0]
-
-    if len(candidates) > 1:
-        candidate_paths = ", ".join(str(path) for path in candidates)
-        raise FileNotFoundError(
-            f"Legacy template ref '{template_ref}' is ambiguous across template sources: "
-            f"{candidate_paths}. Use a source ref: org/repo#subdir."
-        )
-
-    raise FileNotFoundError(
-        f"Template '{template_ref}' not found in {template_root_dir}"
-    )
-
-
 def resolve_template_source(
     template_ref: str,
     *,
     clone_missing_repo: bool = True,
-    warn_on_legacy: bool = True,
 ) -> TemplateSource:
     source_ref = _parse_source_ref(template_ref)
-
-    if source_ref is None:
-        if warn_on_legacy:
-            logger.warning(
-                "⚠️  Legacy template refs are deprecated. Use org/repo#subdir format: %s",
-                template_ref,
-            )
-        template_dir = _resolve_legacy_template_dir(template_ref)
-        return TemplateSource(
-            ref=template_ref,
-            resolution=LEGACY_RESOLUTION,
-            template_dir=template_dir,
-        )
-
     repo_locator, subdir = source_ref
     org, repo, repo_url = parse_repo_locator(repo_locator)
 
@@ -194,8 +137,9 @@ def resolve_template_source(
             f"Template subdir '{subdir}' not found in template source repo: {local_repo_path}"
         )
 
+    canonical_ref = f"{repo_url}#{subdir}"
     return TemplateSource(
-        ref=template_ref,
+        ref=canonical_ref,
         resolution=SOURCE_RESOLUTION,
         repo_url=repo_url,
         org=org,
@@ -206,57 +150,15 @@ def resolve_template_source(
     )
 
 
-def build_source_backlink(source: TemplateSource) -> dict[str, Any] | None:
-    if source.resolution != SOURCE_RESOLUTION:
-        return None
-
-    assert source.repo_url is not None
-    assert source.org is not None
-    assert source.repo is not None
-    assert source.subdir is not None
-    assert source.local_repo_path is not None
-
-    return {
-        "ref": source.ref,
-        "repo_url": source.repo_url,
-        "org": source.org,
-        "repo": source.repo,
-        "subdir": source.subdir,
-        "local_repo_path": str(source.local_repo_path),
-        "template_dir": str(source.template_dir),
-        "resolution": source.resolution,
-    }
-
-
 def resolve_source_from_boilersync(
     template_ref: str | None,
-    source_data: dict[str, Any] | None,
     *,
     clone_missing_repo: bool = True,
 ) -> TemplateSource:
-    if source_data:
-        ref_from_source = source_data.get("ref")
-        if isinstance(ref_from_source, str) and ref_from_source.strip():
-            return resolve_template_source(
-                ref_from_source.strip(),
-                clone_missing_repo=clone_missing_repo,
-                warn_on_legacy=False,
-            )
-
-        repo_url = source_data.get("repo_url")
-        subdir = source_data.get("subdir")
-        if isinstance(repo_url, str) and isinstance(subdir, str):
-            return resolve_template_source(
-                f"{repo_url}#{subdir}",
-                clone_missing_repo=clone_missing_repo,
-                warn_on_legacy=False,
-            )
-
-    if not template_ref:
+    if not isinstance(template_ref, str) or not template_ref.strip():
         raise ValueError("Template reference missing in .boilersync metadata.")
 
     return resolve_template_source(
-        template_ref,
+        template_ref.strip(),
         clone_missing_repo=clone_missing_repo,
-        warn_on_legacy=False,
     )

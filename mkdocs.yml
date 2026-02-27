@@ -7,3 +7,4 @@ nav:
   - Home: index.md
   - Ensemble Guide: ensemble.md
   - Template Metadata: template-metadata.md
+  - Project Metadata: project-metadata.md
