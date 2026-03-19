@@ -267,6 +267,27 @@ def _normalize_template_variables(
     return merged or None
 
 
+def _inject_monorepo_conversion_hook(
+    runtime_config: dict[str, Any],
+    *,
+    target_dir: Path,
+) -> None:
+    multi_json_path = target_dir / "multi.json"
+    if not multi_json_path.exists():
+        logger.warning(
+            "⚠️  --monorepo was requested but no multi.json was found at "
+            f"{multi_json_path}; skipping monorepo conversion hook."
+        )
+        return
+
+    runtime_config["hooks"]["post_init"].append(
+        {
+            "id": "convert-monorepo",
+            "run": "multi convert-monorepo --confirm",
+        }
+    )
+
+
 def _resolve_child_template_ref(parent_template_ref: str, child_template_ref: str) -> str:
     if "#" in child_template_ref:
         return child_template_ref
@@ -294,6 +315,7 @@ def init(
     no_input: bool = False,
     run_hooks: bool = True,
     run_children: bool = True,
+    monorepo: bool = False,
 ) -> None:
     """Initialize a new project from a template (empty directory only).
 
@@ -333,6 +355,9 @@ def init(
         parent_boilersync_path = parent_dir / ".boilersync"
         paths.add_child_to_parent(target_dir, parent_boilersync_path)
         logger.info(f"📎 Registered as child project in parent: {parent_dir}")
+
+    if monorepo:
+        _inject_monorepo_conversion_hook(runtime_config, target_dir=target_dir)
 
     runtime_context = interpolation_context.get_context()
     if options:
@@ -421,6 +446,7 @@ def init(
                 no_input=no_input,
                 run_hooks=run_hooks,
                 run_children=run_children,
+                monorepo=False,
             )
 
     if run_hooks:
@@ -482,13 +508,25 @@ def parse_option(ctx, param, value: tuple[str, ...]) -> dict[str, Any]:
     callback=parse_option,
     help="Template runtime option in KEY=VALUE format (can be used multiple times)",
 )
-@click.option("--no-input", is_flag=True, help="Do not prompt for input (use defaults)")
+@click.option(
+    "--monorepo",
+    is_flag=True,
+    help="After init, convert the generated workspace to multi monorepo mode.",
+)
+@click.option(
+    "--no-input",
+    "--non-interactive",
+    "no_input",
+    is_flag=True,
+    help="Do not prompt for input (non-interactive mode; use defaults and --var for required values)",
+)
 def init_cmd(
     template_ref: str,
     project_name: str | None,
     pretty_name: str | None,
     variables: dict[str, Any],
     runtime_options: dict[str, Any],
+    monorepo: bool,
     no_input: bool,
 ):
     """Initialize a new project from a template (empty directory only).
@@ -499,10 +537,10 @@ def init_cmd(
 
     This command only works in empty directories.
 
-    For non-interactive usage, provide --name and any required template variables:
+    For non-interactive usage, provide --non-interactive, --name, and any required template variables:
 
     \b
-      boilersync init your-org/your-templates#service --name my_project --var author_name="John Doe"
+      boilersync init your-org/your-templates#service --non-interactive --name my_project --var author_name="John Doe"
     """
     init(
         template_ref,
@@ -512,4 +550,5 @@ def init_cmd(
         template_variables=variables if variables else None,
         options=runtime_options if runtime_options else None,
         no_input=no_input,
+        monorepo=monorepo,
     )

@@ -212,6 +212,78 @@ class TestInitRuntimeFeatures(unittest.TestCase):
         self.assertTrue((target_dir / "child-project" / "child.txt").exists())
 
     @patch("boilersync.commands.init.subprocess.run")
+    def test_init_monorepo_adds_post_init_conversion_hook(self, mock_run) -> None:
+        target_dir = self.root / "workspace-monorepo"
+        target_dir.mkdir()
+
+        _write_template(
+            self.template_root_dir,
+            org=self.org,
+            repo=self.repo,
+            subdir="workspace-template-monorepo",
+            files={
+                "README.md.boilersync": "Workspace\n",
+                "multi.json.boilersync": '{"repos": []}\n',
+            },
+            config={
+                "hooks": {
+                    "post_init": [
+                        {"id": "existing-hook", "run": "echo existing"},
+                    ]
+                },
+                "skip_git": True,
+            },
+        )
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["hook"],
+            returncode=0,
+        )
+
+        init(
+            self._template_ref("workspace-template-monorepo"),
+            target_dir=target_dir,
+            project_name="demo_workspace",
+            no_input=True,
+            monorepo=True,
+        )
+
+        called_commands = [call.args[0] for call in mock_run.call_args_list]
+        self.assertIn("multi convert-monorepo --confirm", called_commands)
+
+    @patch("boilersync.commands.init.subprocess.run")
+    def test_init_monorepo_warns_when_multi_json_missing(self, mock_run) -> None:
+        target_dir = self.root / "workspace-no-multi-json"
+        target_dir.mkdir()
+
+        _write_template(
+            self.template_root_dir,
+            org=self.org,
+            repo=self.repo,
+            subdir="workspace-template-no-multi",
+            files={"README.md.boilersync": "Workspace\n"},
+            config={"skip_git": True},
+        )
+
+        with self.assertLogs("boilersync.commands.init", level="WARNING") as captured:
+            init(
+                self._template_ref("workspace-template-no-multi"),
+                target_dir=target_dir,
+                project_name="demo_workspace",
+                no_input=True,
+                monorepo=True,
+            )
+
+        self.assertTrue(
+            any(
+                "--monorepo was requested but no multi.json was found"
+                in message
+                for message in captured.output
+            )
+        )
+        mock_run.assert_not_called()
+
+    @patch("boilersync.commands.init.subprocess.run")
     def test_create_github_repo_with_condition(self, mock_run) -> None:
         mock_run.side_effect = [
             subprocess.CompletedProcess(

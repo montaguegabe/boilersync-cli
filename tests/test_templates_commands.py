@@ -5,6 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from click.testing import CliRunner
+
+from boilersync.commands.init import init_cmd
 from boilersync.commands.init import parse_key_value_options
 from boilersync.commands.templates import get_template_details, list_local_templates
 
@@ -125,6 +128,24 @@ class TestTemplatesCommands(unittest.TestCase):
         parsed = parse_key_value_options(("with_ci=true", "retries=3"))
         self.assertTrue(parsed["with_ci"])
         self.assertEqual(parsed["retries"], 3)
+
+    def test_init_cmd_accepts_non_interactive_flag_alias(self) -> None:
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            with patch("boilersync.commands.init.init") as mock_init:
+                result = runner.invoke(
+                    init_cmd,
+                    [
+                        "acme/platform#service",
+                        "--non-interactive",
+                        "--name",
+                        "my_service",
+                    ],
+                )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(mock_init.called)
+        self.assertTrue(mock_init.call_args.kwargs["no_input"])
 
 
 if __name__ == "__main__":

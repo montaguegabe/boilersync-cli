@@ -1,11 +1,23 @@
 from pathlib import Path
 from typing import Any, Dict
 
-from boilersync.names import ProjectNames, create_project_names, normalize_to_snake
+from boilersync.names import (
+    ProjectNames,
+    create_project_names,
+    normalize_to_snake,
+    snake_to_kebab,
+)
 
 
 class InterpolationContext:
     """Context for template interpolation with project names and other variables."""
+
+    _NAME_VARIANT_SUFFIXES = (
+        ("_snake", "_kebab"),
+        ("_kebab", "_snake"),
+        ("_SNAKE", "_KEBAB"),
+        ("_KEBAB", "_SNAKE"),
+    )
 
     def __init__(self):
         self._names: ProjectNames | None = None
@@ -91,7 +103,34 @@ class InterpolationContext:
         # Add user-collected variables
         context.update(self._collected_vars)
 
+        self._add_name_variants(context)
+
         return context
+
+    def _add_name_variants(self, context: Dict[str, Any]) -> None:
+        """Populate missing *_snake/*_kebab sibling variables from string values."""
+        derived: Dict[str, str] = {}
+
+        for key, value in context.items():
+            if not isinstance(value, str):
+                continue
+
+            for source_suffix, target_suffix in self._NAME_VARIANT_SUFFIXES:
+                if not key.endswith(source_suffix):
+                    continue
+
+                sibling_key = key[: -len(source_suffix)] + target_suffix
+                if sibling_key in context or sibling_key in derived:
+                    break
+
+                snake_value = normalize_to_snake(value)
+                if source_suffix.lower() == "_snake":
+                    derived[sibling_key] = snake_to_kebab(snake_value)
+                else:
+                    derived[sibling_key] = snake_value
+                break
+
+        context.update(derived)
 
     def has_variable(self, key: str) -> bool:
         """Check if a variable is available in the context.
