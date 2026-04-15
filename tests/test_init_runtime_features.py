@@ -188,6 +188,53 @@ class TestInitRuntimeFeatures(unittest.TestCase):
         self.assertNotIn("source", root_boilersync_data)
         self.assertEqual(root_boilersync_data["children"], ["demo-workspace-child"])
 
+    def test_template_defaults_are_applied_before_variable_collection(self) -> None:
+        target_dir = self.root / "defaulted-workspace"
+        target_dir.mkdir()
+
+        _write_template(
+            self.template_root_dir,
+            org=self.org,
+            repo=self.repo,
+            subdir="defaulted-template",
+            files={
+                "README.md.boilersync": (
+                    "$${api_package_name} "
+                    "$${web_package_name} "
+                    "$${api_client_export_name} "
+                    "$${with_frontend}\n"
+                )
+            },
+            config={
+                "defaults": {
+                    "api_package_name": "$${name_snake}_api",
+                    "web_package_name": "$${name_kebab}-web",
+                    "api_client_export_name": "$${name_camel}",
+                    "with_frontend": True,
+                },
+                "skip_git": True,
+            },
+        )
+
+        init(
+            self._template_ref("defaulted-template"),
+            target_dir=target_dir,
+            no_input=True,
+            template_variables={"name_snake": "demo_workspace"},
+        )
+
+        self.assertEqual(
+            (target_dir / "README.md").read_text(encoding="utf-8"),
+            "demo_workspace_api demo-workspace-web demoWorkspace True\n",
+        )
+
+        boilersync_data = json.loads((target_dir / ".boilersync").read_text())
+        self.assertEqual(
+            boilersync_data["variables"]["api_package_name"],
+            "demo_workspace_api",
+        )
+        self.assertTrue(boilersync_data["variables"]["with_frontend"])
+
     def test_init_with_local_child_template_name(self) -> None:
         target_dir = self.root / "workspace-local-child"
         target_dir.mkdir()

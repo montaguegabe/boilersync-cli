@@ -8,10 +8,13 @@ import click
 from git import InvalidGitRepositoryError, Repo
 
 from boilersync.interpolation_context import interpolation_context
-from boilersync.names import normalize_to_snake, snake_to_pretty
+from boilersync.names import default_project_snake_from_directory_name, snake_to_pretty
 from boilersync.paths import paths
 from boilersync.project_metadata import write_project_metadata
-from boilersync.template_processor import process_template_directory
+from boilersync.template_processor import (
+    apply_template_defaults,
+    process_template_directory,
+)
 from boilersync.template_sources import (
     TemplateSource,
     resolve_source_from_boilersync,
@@ -174,6 +177,8 @@ def process_template_directory_excluding_starter(
         template_dir: Source template directory
         target_dir: Target directory to process into
     """
+    apply_template_defaults(template_dir)
+
     # First, scan the template for all variables (excluding starter files)
     template_variables = scan_template_for_variables_excluding_starter(template_dir)
 
@@ -293,7 +298,7 @@ def _resolve_name_variables(
 ) -> tuple[dict[str, Any], str, str]:
     variables = dict(collected_variables or {})
 
-    default_snake_name = normalize_to_snake(target_dir.name)
+    default_snake_name = default_project_snake_from_directory_name(target_dir.name)
     resolved_name_snake = str(
         variables.get("name_snake")
         or stored_name_snake

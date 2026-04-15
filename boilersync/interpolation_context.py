@@ -4,6 +4,7 @@ from typing import Any, Dict
 from boilersync.names import (
     ProjectNames,
     create_project_names,
+    default_project_snake_from_directory_name,
     normalize_to_snake,
     snake_to_kebab,
 )
@@ -31,7 +32,7 @@ class InterpolationContext:
             directory: Directory whose name will be used for the project
         """
         project_name = directory.name
-        snake_name = normalize_to_snake(project_name)
+        snake_name = default_project_snake_from_directory_name(project_name)
         self._names = create_project_names(snake_name)
 
     def set_project_names(self, snake_name: str, pretty_name: str) -> None:

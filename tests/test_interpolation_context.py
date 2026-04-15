@@ -11,6 +11,7 @@ from git import Repo
 
 from boilersync.commands.init import init
 from boilersync.interpolation_context import interpolation_context
+from boilersync.names import default_project_snake_from_directory_name
 
 
 def _commit_template_repo(repo_dir: Path) -> None:
@@ -73,6 +74,20 @@ class TestInterpolationContextNameVariants(unittest.TestCase):
         context = interpolation_context.get_context()
 
         self.assertEqual(context["api_package_name_kebab"], "custom-kebab")
+
+
+class TestDirectoryNameDefaults(unittest.TestCase):
+    def test_default_project_name_strips_workspace_suffix(self) -> None:
+        self.assertEqual(
+            default_project_snake_from_directory_name("woo-score-workspace"),
+            "woo_score",
+        )
+
+    def test_default_project_name_preserves_non_workspace_name(self) -> None:
+        self.assertEqual(
+            default_project_snake_from_directory_name("woo-score"),
+            "woo_score",
+        )
 
 
 class TestDerivedNameVariantsInInit(unittest.TestCase):

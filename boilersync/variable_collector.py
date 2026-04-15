@@ -1,3 +1,4 @@
+import subprocess
 from typing import Any, Set
 
 import click
@@ -87,6 +88,8 @@ def collect_missing_variables(template_variables: Set[str], no_input: bool) -> N
         template_variables: Variables found in template content
         no_input: If True, raise an error for missing variables instead of prompting
     """
+    apply_automatic_variable_defaults(template_variables)
+
     missing_variables = []
 
     for var in template_variables:
@@ -126,3 +129,25 @@ def collect_missing_variables(template_variables: Set[str], no_input: bool) -> N
 
         click.echo("=" * 50)
         click.echo("✅ All variables collected!\n")
+
+
+def apply_automatic_variable_defaults(template_variables: Set[str]) -> None:
+    """Populate defaults that can be discovered from the local environment."""
+    if "github_user" not in template_variables:
+        return
+
+    if interpolation_context.has_variable("github_user"):
+        return
+
+    try:
+        result = subprocess.run(
+            ["gh", "api", "user", "--jq", ".login"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return
+    github_user = result.stdout.strip()
+    if result.returncode == 0 and github_user:
+        interpolation_context.set_collected_variable("github_user", github_user)

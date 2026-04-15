@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 from pathlib import Path
@@ -11,7 +12,6 @@ from boilersync.variable_collector import (
     create_jinja_environment,
     extract_variables_from_template_content,
 )
-
 
 PATH_NAME_VARIABLE_PATTERN = re.compile(r"\b(NAME_[A-Z0-9_]+)\b")
 
@@ -164,6 +164,52 @@ def process_template_file(file_path: Path, context: Dict[str, Any]) -> None:
         pass
 
 
+def render_template_value(value: Any, context: Dict[str, Any]) -> Any:
+    """Render a template metadata value with the current interpolation context."""
+    if isinstance(value, str):
+        env = create_jinja_environment()
+        return env.from_string(value).render(context)
+    if isinstance(value, list):
+        return [render_template_value(item, context) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): render_template_value(child_value, context)
+            for key, child_value in value.items()
+        }
+    return value
+
+
+def apply_template_defaults(template_dir: Path) -> None:
+    """Apply template.json defaults before missing-variable collection."""
+    template_json_path = template_dir / "template.json"
+    if not template_json_path.exists():
+        return
+
+    try:
+        config = json.loads(template_json_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+
+    defaults = config.get("defaults", {})
+    if not defaults:
+        return
+    if not isinstance(defaults, dict):
+        raise ValueError(
+            f"Template '{template_dir}' has invalid 'defaults' config: expected object"
+        )
+
+    for key, value in defaults.items():
+        key = str(key)
+        if interpolation_context.has_variable(key):
+            continue
+
+        context = interpolation_context.get_context()
+        interpolation_context.set_collected_variable(
+            key,
+            render_template_value(value, context),
+        )
+
+
 def copy_and_process_template(
     source_dir: Path, target_dir: Path, context: Dict[str, Any]
 ) -> None:
@@ -222,6 +268,8 @@ def process_template_directory(
         template_dir: Source template directory
         target_dir: Target directory to process into
     """
+    apply_template_defaults(template_dir)
+
     # First, scan the template for all variables
     template_variables = scan_template_for_variables(template_dir)
 

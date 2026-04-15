@@ -53,6 +53,15 @@ def normalize_to_snake(name: str) -> str:
     return snake
 
 
+def default_project_snake_from_directory_name(directory_name: str) -> str:
+    """Infer a project name from a directory name."""
+    snake_name = normalize_to_snake(directory_name)
+    for suffix in ("_workspace",):
+        if snake_name.endswith(suffix) and len(snake_name) > len(suffix):
+            return snake_name[: -len(suffix)]
+    return snake_name
+
+
 def snake_to_pascal(snake_name: str) -> str:
     """Convert snake_case to PascalCase."""
     return "".join(word.capitalize() for word in snake_name.split("_"))
