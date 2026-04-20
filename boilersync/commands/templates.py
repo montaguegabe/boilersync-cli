@@ -121,6 +121,90 @@ def list_local_templates() -> list[dict[str, Any]]:
     return templates
 
 
+def _git_output(repo_dir: Path, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_dir), *args],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    output = result.stdout.strip()
+    return output or None
+
+
+def list_template_sources() -> dict[str, Any]:
+    template_root_dir = paths.template_root_dir
+    sources: list[dict[str, Any]] = []
+
+    if template_root_dir.exists():
+        for org_dir in sorted(template_root_dir.iterdir()):
+            if not org_dir.is_dir() or org_dir.name.startswith("."):
+                continue
+
+            for repo_dir in sorted(org_dir.iterdir()):
+                if not repo_dir.is_dir() or repo_dir.name.startswith("."):
+                    continue
+                if not (repo_dir / ".git").exists():
+                    continue
+
+                remote_url = _git_output(repo_dir, "config", "--get", "remote.origin.url")
+                source = {
+                    "org": org_dir.name,
+                    "repo": repo_dir.name,
+                    "path": str(repo_dir),
+                    "remote_url": remote_url,
+                    "branch": _git_output(repo_dir, "branch", "--show-current"),
+                    "commit": _git_output(repo_dir, "rev-parse", "--short", "HEAD"),
+                    "template_count": len(_iter_repo_template_subdirs(repo_dir)),
+                }
+                sources.append(source)
+
+    paths_by_remote: dict[str, list[str]] = {}
+    for source in sources:
+        remote_url = source.get("remote_url")
+        if not remote_url:
+            continue
+        paths_by_remote.setdefault(str(remote_url), []).append(str(source["path"]))
+
+    duplicate_remotes = [
+        {
+            "remote_url": remote_url,
+            "paths": sorted(source_paths),
+        }
+        for remote_url, source_paths in sorted(paths_by_remote.items())
+        if len(source_paths) > 1
+    ]
+
+    return {
+        "template_root_dir": str(template_root_dir),
+        "source_count": len(sources),
+        "sources": sources,
+        "duplicate_remotes": duplicate_remotes,
+    }
+
+
+def _find_existing_source_for_remote(
+    remote_url: str,
+    *,
+    exclude_path: Path | None = None,
+) -> dict[str, Any] | None:
+    excluded = exclude_path.resolve() if exclude_path is not None else None
+    for source in list_template_sources()["sources"]:
+        source_path = Path(str(source["path"])).resolve()
+        if excluded is not None and source_path == excluded:
+            continue
+        if source.get("remote_url") == remote_url:
+            return source
+    return None
+
+
 def _normalize_input_definition(
     name: str,
     raw_definition: Any,
@@ -284,6 +368,17 @@ def init_templates(
                 f"Template source directory already exists and is not empty: {target_dir}"
             )
 
+    duplicate_source = _find_existing_source_for_remote(
+        canonical_repo_url,
+        exclude_path=target_dir,
+    )
+    if duplicate_source is not None:
+        raise click.ClickException(
+            "Template source remote is already initialized at "
+            f"{duplicate_source['path']}. Use that source instead of creating "
+            f"a duplicate checkout at {target_dir}."
+        )
+
     click.echo(f"📦 Cloning template source into: {target_dir}")
     try:
         subprocess.run(["git", "clone", canonical_repo_url, str(target_dir)], check=True)
@@ -342,6 +437,43 @@ def templates_list_cmd(json_output: bool) -> None:
         click.echo(f"  path: {template['template_dir']}")
 
 
+@click.command(name="sources")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+def templates_sources_cmd(json_output: bool) -> None:
+    """Show local template source checkouts and duplicate remotes."""
+    payload = list_template_sources()
+
+    if json_output:
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    click.echo(f"Template root: {payload['template_root_dir']}")
+    sources = payload["sources"]
+    if not sources:
+        click.echo("No template sources found.")
+        return
+
+    click.echo("")
+    for source in sources:
+        click.echo(f"- {source['org']}/{source['repo']}")
+        click.echo(f"  path: {source['path']}")
+        click.echo(f"  remote: {source['remote_url'] or '(none)'}")
+        click.echo(f"  branch: {source['branch'] or '(unknown)'}")
+        click.echo(f"  commit: {source['commit'] or '(unknown)'}")
+        click.echo(f"  templates: {source['template_count']}")
+
+    duplicate_remotes = payload["duplicate_remotes"]
+    click.echo("")
+    if duplicate_remotes:
+        click.echo("Duplicate remotes:")
+        for duplicate in duplicate_remotes:
+            click.echo(f"- {duplicate['remote_url']}")
+            for source_path in duplicate["paths"]:
+                click.echo(f"  - {source_path}")
+    else:
+        click.echo("No duplicate remotes found.")
+
+
 @click.command(name="details")
 @click.argument("template_ref")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
@@ -382,4 +514,5 @@ def templates_cmd() -> None:
 
 templates_cmd.add_command(templates_init_cmd)
 templates_cmd.add_command(templates_list_cmd)
+templates_cmd.add_command(templates_sources_cmd)
 templates_cmd.add_command(templates_details_cmd)

@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,9 +8,13 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
-from boilersync.commands.init import init_cmd
-from boilersync.commands.init import parse_key_value_options
-from boilersync.commands.templates import get_template_details, list_local_templates
+from boilersync.commands.init import init_cmd, parse_key_value_options
+from boilersync.commands.templates import (
+    get_template_details,
+    list_local_templates,
+    list_template_sources,
+    templates_cmd,
+)
 
 
 def _write_template(
@@ -117,6 +122,97 @@ class TestTemplatesCommands(unittest.TestCase):
 
         self.assertIn("acme/platform#python/service", refs)
         self.assertNotIn("acme/platform#python/service/src", refs)
+
+    def test_list_template_sources_reports_duplicate_remotes(self) -> None:
+        for repo in ("old-name", "new-name"):
+            repo_dir = self.template_root_dir / "acme" / repo
+            repo_dir.mkdir(parents=True)
+            subprocess.run(
+                ["git", "init"],
+                cwd=repo_dir,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://github.com/acme/templates.git",
+                ],
+                cwd=repo_dir,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            template_dir = repo_dir / "service"
+            template_dir.mkdir()
+            (template_dir / "template.json").write_text("{}", encoding="utf-8")
+
+        payload = list_template_sources()
+
+        self.assertEqual(payload["source_count"], 2)
+        self.assertEqual(
+            payload["duplicate_remotes"],
+            [
+                {
+                    "remote_url": "https://github.com/acme/templates.git",
+                    "paths": [
+                        str(self.template_root_dir / "acme" / "new-name"),
+                        str(self.template_root_dir / "acme" / "old-name"),
+                    ],
+                }
+            ],
+        )
+
+    def test_templates_sources_cmd_outputs_json(self) -> None:
+        _write_template(
+            self.template_root_dir,
+            org="acme",
+            repo="platform",
+            subdir="service",
+            files={"README.md.boilersync": "hello"},
+            config={},
+        )
+
+        result = CliRunner().invoke(templates_cmd, ["sources", "--json"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        payload = json.loads(result.output)
+        self.assertEqual(payload["template_root_dir"], str(self.template_root_dir))
+        self.assertEqual(payload["source_count"], 1)
+
+    def test_templates_init_rejects_duplicate_remote(self) -> None:
+        existing_dir = self.template_root_dir / "acme" / "current-templates"
+        existing_dir.mkdir(parents=True)
+        subprocess.run(
+            ["git", "init"],
+            cwd=existing_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/acme/old-templates.git",
+            ],
+            cwd=existing_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        result = CliRunner().invoke(templates_cmd, ["init", "acme/old-templates"])
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("Template source remote is already initialized", result.output)
+        self.assertIn(str(existing_dir), result.output)
 
     def test_get_template_details_returns_variables_and_options(self) -> None:
         _write_template(

@@ -25,6 +25,17 @@ class TestTemplateSources(unittest.TestCase):
         self.assertEqual(repo, "template-kit")
         self.assertEqual(clone_url, "https://github.com/acme/template-kit.git")
 
+    def test_parse_repo_locator_uses_known_repo_renames(self):
+        org, repo, clone_url = parse_repo_locator(
+            "openbase-community/openbase-boilerplate"
+        )
+        self.assertEqual(org, "openbase-community")
+        self.assertEqual(repo, "templates")
+        self.assertEqual(
+            clone_url,
+            "https://github.com/openbase-community/templates.git",
+        )
+
     def test_parse_repo_locator_rejects_non_github_host(self):
         with self.assertRaises(ValueError):
             parse_repo_locator("https://gitlab.com/acme/template-kit.git")

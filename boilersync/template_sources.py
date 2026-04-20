@@ -8,6 +8,12 @@ from urllib.parse import urlparse
 from boilersync.paths import paths
 
 SOURCE_RESOLUTION = "source_ref"
+REPO_RENAMES = {
+    ("openbase-community", "openbase-boilerplate"): (
+        "openbase-community",
+        "templates",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -39,6 +45,10 @@ def _normalize_subdir(subdir: str) -> str:
     return cleaned
 
 
+def _canonical_repo_identity(org: str, repo: str) -> tuple[str, str]:
+    return REPO_RENAMES.get((org, repo), (org, repo))
+
+
 def parse_repo_locator(repo_locator: str) -> tuple[str, str, str]:
     locator = repo_locator.strip()
     if not locator:
@@ -65,8 +75,7 @@ def parse_repo_locator(repo_locator: str) -> tuple[str, str, str]:
             raise ValueError(
                 "Template source repo URL must be in the format https://github.com/org/repo(.git)."
             )
-        org = parts[0]
-        repo = parts[1]
+        org, repo = _canonical_repo_identity(parts[0], parts[1])
         clone_url = f"https://github.com/{org}/{repo}.git"
         return org, repo, clone_url
 
@@ -76,6 +85,7 @@ def parse_repo_locator(repo_locator: str) -> tuple[str, str, str]:
         repo = match.group("repo")
         if repo.endswith(".git"):
             repo = repo[: -len(".git")]
+        org, repo = _canonical_repo_identity(org, repo)
         clone_url = f"https://github.com/{org}/{repo}.git"
         return org, repo, clone_url
 
